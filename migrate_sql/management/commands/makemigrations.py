@@ -121,5 +121,4 @@ class Command(MakeMigrationsCommand):
             else:
                 return
 
-        import pdb; pdb.set_trace()
         self.write_migration_files(changes)
