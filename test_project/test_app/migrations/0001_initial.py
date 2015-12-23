@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('name', models.CharField(max_length=200)),
-                ('rating', models.IntegerField(null=True, blank=True)),
+                ('registered', models.BooleanField(default=False)),
             ],
         ),
         migrations.CreateModel(
@@ -23,6 +23,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('name', models.CharField(max_length=200)),
+                ('rating', models.IntegerField(null=True, blank=True)),
+                ('published', models.BooleanField(default=True)),
                 ('author', models.ForeignKey(to='test_app.Author')),
             ],
         ),
