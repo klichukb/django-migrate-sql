@@ -1,22 +1,20 @@
 
 def top_authors_sql():
     min_rating = 5
-    min_book_count = 2
     return (
         # sql
         [("""
-            CREATE OR REPLACE FUNCTION top_authors()
-                RETURNS SETOF test_app_author AS $$
+            CREATE OR REPLACE FUNCTION top_books()
+                RETURNS SETOF test_app_book AS $$
             BEGIN
                 RETURN QUERY
-                  SELECT au.*
-                    FROM test_app_author au
-                    WHERE (SELECT COUNT(*) FROM test_app_book ab
-                           WHERE ab.author_id = au.id AND ab.rating > %s) > %s;
+                    SELECT * FROM test_app_book ab
+                    WHERE ab.rating > %s
+                    ORDER BY ab.rating DESC;
             END;
             $$ LANGUAGE plpgsql;
-          """, [min_rating, min_book_count])],
+          """, [min_rating])],
 
         # reverse sql
-        'DROP FUNCTION top_authors()',
+        'DROP FUNCTION top_books()',
     )
