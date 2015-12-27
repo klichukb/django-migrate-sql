@@ -172,3 +172,31 @@ class MigrateSQLTestCase(TestCase):
                 else:
                     result = run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
                     self.assertEqual(result, [(0,)])
+
+    def test_migration_delete(self):
+        progress_expected = (
+            ('0003', None),
+            ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
+        )
+
+        cmd_output = StringIO()
+        with self.temporary_migration_module(module='test_app.migrations_v1'):
+            self.config.custom_sql = []
+            call_command('makemigrations', 'test_app', stdout=cmd_output)
+            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
+            self.assertIn('- Delete SQL "top_books"', lines)
+
+            sql, reverse_sql = top_books_sql_v2()
+            self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+            call_command('makemigrations', 'test_app', stdout=cmd_output)
+            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
+            self.assertIn('- Create SQL "top_books"', lines)
+
+            for migration, expected in progress_expected:
+                call_command('migrate', 'test_app', migration, stdout=cmd_output)
+                if expected:
+                    result = run_query('SELECT name FROM top_books()')
+                    self.assertEqual(result, expected)
+                else:
+                    result = run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
+                    self.assertEqual(result, [(0,)])

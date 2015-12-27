@@ -1,6 +1,6 @@
 from django.db.migrations.autodetector import MigrationAutodetector as DjangoMigrationAutodetector
 
-from migrate_sql.operations import AlterSQL, ReverseAlterSQL, CreateSQL
+from migrate_sql.operations import AlterSQL, ReverseAlterSQL, CreateSQL, DeleteSQL
 from migrate_sql.graph import SqlStateGraph
 
 
@@ -23,6 +23,14 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             self.add_operation(
                 app_label,
                 CreateSQL(sql_name, new_node.sql, reverse_sql=new_node.reverse_sql),
+            )
+
+        for key in deleted_keys:
+            app_label, sql_name = key
+            old_node = self.from_sql_graph.nodes[key]
+            self.add_operation(
+                app_label,
+                DeleteSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql),
             )
 
         for key in from_keys & to_keys:

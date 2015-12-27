@@ -11,6 +11,13 @@ class SqlStateGraph(object):
         self.nodes = {}
         self.node_map = {}
 
+    def remove_node(self, key):
+        # TODO: Dummy for Issue #2
+        # Silences state aggregation problem in `migrate` command.
+        if key in self.nodes and key in self.node_map:
+            del self.nodes[key]
+            del self.node_map[key]
+
     def add_node(self, key, sql_item):
         node = Node(key)
         self.node_map[key] = node
@@ -35,12 +42,14 @@ class SqlStateGraph(object):
 def build_current_graph():
     graph = SqlStateGraph()
     for config in apps.get_app_configs():
-        if hasattr(config, 'custom_sql'):
-            for sql_item in config.custom_sql:
-                graph.add_node(
-                    (config.label, sql_item.name),
-                    SqlItemNode(sql_item.sql, sql_item.reverse_sql),
-                )
-                for dep in sql_item.dependencies:
-                    graph.add_dependency(config.label, sql_item.name, dep)
+        if not hasattr(config, 'custom_sql'):
+            continue
+
+        for sql_item in config.custom_sql:
+            graph.add_node(
+                (config.label, sql_item.name),
+                SqlItemNode(sql_item.sql, sql_item.reverse_sql),
+            )
+            for dep in sql_item.dependencies:
+                graph.add_dependency(config.label, sql_item.name, dep)
     return graph
