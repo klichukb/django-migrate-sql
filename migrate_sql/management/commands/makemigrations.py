@@ -10,6 +10,7 @@ from django.db.migrations.state import ProjectState
 from django.utils.six import iteritems
 
 from migrate_sql.autodetector import MigrationAutodetector
+from migrate_sql.graph import build_current_graph
 
 
 class Command(MakeMigrationsCommand):
@@ -73,12 +74,14 @@ class Command(MakeMigrationsCommand):
             return self.handle_merge(loader, conflicts)
 
         state = loader.project_state()
+        sql_graph = build_current_graph()
 
         # Set up autodetector
         autodetector = MigrationAutodetector(
             state,
             ProjectState.from_apps(apps),
             InteractiveMigrationQuestioner(specified_apps=app_labels, dry_run=self.dry_run),
+            sql_graph,
         )
 
         # If they want to make an empty migration, make one for each app

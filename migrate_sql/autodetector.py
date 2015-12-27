@@ -1,39 +1,60 @@
 from django.db.migrations.autodetector import MigrationAutodetector as DjangoMigrationAutodetector
-from django.apps import apps
 
-from migrate_sql.operations import MigrateSQL, ReverseMigrateSQL
+from migrate_sql.operations import AlterSQL, ReverseAlterSQL, CreateSQL
+from migrate_sql.graph import SqlStateGraph
 
 
 class MigrationAutodetector(DjangoMigrationAutodetector):
+    def __init__(self, from_state, to_state, questioner=None, to_sql_graph=None):
+        super(MigrationAutodetector, self).__init__(from_state, to_state, questioner)
+        self.to_sql_graph = to_sql_graph
+        self.from_sql_graph = getattr(self.from_state, 'custom_sql', None) or SqlStateGraph()
+
+    def generate_changed_sql(self):
+        from_keys = set(self.from_sql_graph.nodes.keys())
+        to_keys = set(self.to_sql_graph.nodes.keys())
+        new_keys = to_keys - from_keys
+        deleted_keys = from_keys - to_keys
+        changed_keys = set()
+
+        for key in new_keys:
+            app_label, sql_name = key
+            new_node = self.to_sql_graph.nodes[key]
+            self.add_operation(
+                app_label,
+                CreateSQL(sql_name, new_node.sql, reverse_sql=new_node.reverse_sql),
+            )
+
+        for key in from_keys & to_keys:
+            # Compare SQL of `from` and `to` states. If they match -- no changes have been
+            # made. Sides can be both strings and lists of 2-tuples,
+            # natively supported by Django's RunSQL:
+            #
+            # https://docs.djangoproject.com/en/1.8/ref/migration-operations/#runsql
+            #
+            # NOTE: if iterables inside a list provide params, they should strictly be
+            # tuples, not list, in order comparison to work.
+            if self.from_sql_graph.nodes[key] == self.to_sql_graph.nodes[key].sql:
+                continue
+            changed_keys.add(key)
+
+        for key in changed_keys:
+            app_label, sql_name = key
+            old_node = self.from_sql_graph.nodes[key]
+            new_node = self.to_sql_graph.nodes[key]
+            # migrate backwards
+            if old_node.reverse_sql:
+                self.add_operation(
+                    app_label,
+                    ReverseAlterSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql),
+                )
+
+            self.add_operation(
+                app_label,
+                AlterSQL(sql_name, new_node.sql, reverse_sql=new_node.reverse_sql),
+            )
 
     def generate_altered_fields(self):
         result = super(MigrationAutodetector, self).generate_altered_fields()
-        for config in apps.get_app_configs():
-            if hasattr(config, 'custom_sql'):
-                custom_sql = getattr(self.from_state, 'custom_sql', {})
-                old_state = custom_sql.get(config.label, {})
-                for sql_name, (sql, reverse_sql) in config.custom_sql:
-                    old_sql, old_reverse_sql = old_state.get(sql_name, (None, None))
-
-                    # Compare SQL of `from` and `to` states. If they match -- no changes have been
-                    # made. Sides can be both strings and lists of 2-tuples,
-                    # natively supported by Django's RunSQL:
-                    #
-                    # https://docs.djangoproject.com/en/1.8/ref/migration-operations/#runsql
-                    #
-                    # NOTE: if iterables inside a list provide params, they should strictly be
-                    # tuples, not list, in order comparison to work.
-                    if sql == old_sql:
-                        continue
-
-                    # migrate backwards
-                    if old_reverse_sql:
-                        self.add_operation(
-                            config.label,
-                            ReverseMigrateSQL(sql_name, old_reverse_sql, reverse_sql=old_sql),
-                        )
-                    self.add_operation(
-                        config.label,
-                        MigrateSQL(sql_name, sql, reverse_sql=reverse_sql),
-                    )
+        self.generate_changed_sql()
         return result
