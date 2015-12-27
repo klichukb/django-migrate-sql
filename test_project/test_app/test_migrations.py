@@ -14,6 +14,7 @@ from django.core.management import call_command
 from django.test.utils import extend_sys_path
 
 from test_app.models import Book
+from migrate_sql import SqlItem
 
 
 def top_books_sql_v1():
@@ -134,12 +135,13 @@ class MigrateSQLTestCase(TestCase):
             shutil.rmtree(temp_dir)
 
     def test_migration_add(self):
-        self.config.custom_sql = [('top_books', top_books_sql_v1())]
+        sql, reverse_sql = top_books_sql_v1()
+        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
         cmd_output = StringIO()
         with self.temporary_migration_module():
             call_command('makemigrations', 'test_app', stdout=cmd_output)
             lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
-            expected_log = '- Custom SQL migration: "top_books"'
+            expected_log = '- Create SQL "top_books"'
             self.assertIn(expected_log, lines)
 
             call_command('migrate', 'test_app', stdout=cmd_output)
@@ -152,13 +154,15 @@ class MigrateSQLTestCase(TestCase):
             ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
             ('0001', None),
         )
-        self.config.custom_sql = [('top_books', top_books_sql_v2())]
+        sql, reverse_sql = top_books_sql_v2()
+        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+
         cmd_output = StringIO()
         with self.temporary_migration_module(module='test_app.migrations_v1'):
             call_command('makemigrations', 'test_app', stdout=cmd_output)
             lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
-            self.assertIn('- Reverse SQL migration: "top_books"', lines)
-            self.assertIn('- Custom SQL migration: "top_books"', lines)
+            self.assertIn('- Reverse alter SQL "top_books"', lines)
+            self.assertIn('- Alter SQL "top_books"', lines)
 
             for migration, expected in progress_expected:
                 call_command('migrate', 'test_app', migration, stdout=cmd_output)

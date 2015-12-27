@@ -1,5 +1,7 @@
 from django.db.migrations.operations import RunSQL
 
+from migrate_sql.graph import SqlStateGraph, SqlItemNode
+
 
 class BaseMigrateSQL(RunSQL):
     def deconstruct(self):
@@ -13,18 +15,26 @@ class BaseMigrateSQL(RunSQL):
         self.name = name
 
 
-class ReverseMigrateSQL(BaseMigrateSQL):
+class ReverseAlterSQL(BaseMigrateSQL):
     def describe(self):
-        return 'Reverse SQL migration: "{name}"'.format(name=self.name)
+        return 'Reverse alter SQL "{name}"'.format(name=self.name)
 
 
-class MigrateSQL(BaseMigrateSQL):
+class AlterSQL(BaseMigrateSQL):
     def describe(self):
-        return 'Custom SQL migration: "{name}"'.format(name=self.name)
+        return 'Alter SQL "{name}"'.format(name=self.name)
 
     def state_forwards(self, app_label, state):
-        super(MigrateSQL, self).state_forwards(app_label, state)
+        super(AlterSQL, self).state_forwards(app_label, state)
         if not hasattr(state, 'custom_sql'):
-            setattr(state, 'custom_sql', {})
-        state.custom_sql.setdefault(app_label, {})
-        state.custom_sql[app_label][self.name] = (self.sql, self.reverse_sql)
+            setattr(state, 'custom_sql', SqlStateGraph())
+
+        state.custom_sql.add_node(
+            (app_label, self.name),
+            SqlItemNode(self.sql, self.reverse_sql),
+        )
+
+
+class CreateSQL(AlterSQL):
+    def describe(self):
+        return 'Create SQL "{name}"'.format(name=self.name)
