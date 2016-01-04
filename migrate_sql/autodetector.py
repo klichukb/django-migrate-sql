@@ -10,28 +10,30 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
         self.to_sql_graph = to_sql_graph
         self.from_sql_graph = getattr(self.from_state, 'custom_sql', None) or SqlStateGraph()
 
+    def sort_sql_changes(self, new_keys, changed_keys):
+        result_keys = []
+        all_keys = new_keys | changed_keys
+        for key in all_keys:
+            node = self.to_sql_graph.node_map[key]
+            ancs = node.ancestors()[:-1]
+            ancs.reverse()
+            pos = next((i for i, k in enumerate(result_keys) if k in ancs), len(result_keys))
+            result_keys.insert(pos, key)
+
+            if key in changed_keys:
+                descs = reversed(node.descendants()[:-1])
+                for desc in descs:
+                    if desc not in all_keys and desc not in result_keys:
+                        result_keys.insert(pos, desc)
+                        changed_keys.add(desc)
+        return result_keys
+
     def generate_changed_sql(self):
         from_keys = set(self.from_sql_graph.nodes.keys())
         to_keys = set(self.to_sql_graph.nodes.keys())
         new_keys = to_keys - from_keys
         deleted_keys = from_keys - to_keys
         changed_keys = set()
-
-        for key in new_keys:
-            app_label, sql_name = key
-            new_node = self.to_sql_graph.nodes[key]
-            self.add_operation(
-                app_label,
-                CreateSQL(sql_name, new_node.sql, reverse_sql=new_node.reverse_sql),
-            )
-
-        for key in deleted_keys:
-            app_label, sql_name = key
-            old_node = self.from_sql_graph.nodes[key]
-            self.add_operation(
-                app_label,
-                DeleteSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql),
-            )
 
         for key in from_keys & to_keys:
             # Compare SQL of `from` and `to` states. If they match -- no changes have been
@@ -42,14 +44,17 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             #
             # NOTE: if iterables inside a list provide params, they should strictly be
             # tuples, not list, in order comparison to work.
-            if self.from_sql_graph.nodes[key] == self.to_sql_graph.nodes[key].sql:
+            if self.from_sql_graph.nodes[key].sql == self.to_sql_graph.nodes[key].sql:
                 continue
             changed_keys.add(key)
 
-        for key in changed_keys:
+        keys = self.sort_sql_changes(new_keys, changed_keys)
+
+        for key in keys:
+            if key not in changed_keys:
+                continue
             app_label, sql_name = key
             old_node = self.from_sql_graph.nodes[key]
-            new_node = self.to_sql_graph.nodes[key]
             # migrate backwards
             if old_node.reverse_sql:
                 self.add_operation(
@@ -57,9 +62,22 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                     ReverseAlterSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql),
                 )
 
+        for key in reversed(keys):
+            app_label, sql_name = key
+            new_node = self.to_sql_graph.nodes[key]
+            operation_cls = AlterSQL if key in changed_keys else CreateSQL
             self.add_operation(
                 app_label,
-                AlterSQL(sql_name, new_node.sql, reverse_sql=new_node.reverse_sql),
+                operation_cls(sql_name, new_node.sql, reverse_sql=new_node.reverse_sql,
+                              dependencies=self.to_sql_graph.node_map[key].parents),
+            )
+
+        for key in deleted_keys:
+            app_label, sql_name = key
+            old_node = self.from_sql_graph.nodes[key]
+            self.add_operation(
+                app_label,
+                DeleteSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql),
             )
 
     def generate_altered_fields(self):
