@@ -9,10 +9,12 @@ class BaseMigrateSQL(RunSQL):
         kwargs['name'] = self.name
         return (name, args, kwargs)
 
-    def __init__(self, name, sql, reverse_sql=None, state_operations=None, hints=None):
+    def __init__(self, name, sql, reverse_sql=None, state_operations=None, hints=None,
+                 dependencies=None):
         super(BaseMigrateSQL, self).__init__(sql, reverse_sql=reverse_sql,
                                              state_operations=state_operations, hints=hints)
         self.name = name
+        self.dependencies = dependencies or ()
 
 
 class ReverseAlterSQL(BaseMigrateSQL):
@@ -39,6 +41,8 @@ class AlterSQL(BaseAlterSQL):
             (app_label, self.name),
             SqlItemNode(self.sql, self.reverse_sql),
         )
+        for dep in self.dependencies:
+            custom_sql.add_dependency(app_label, self.name, dep)
 
 
 class CreateSQL(AlterSQL):

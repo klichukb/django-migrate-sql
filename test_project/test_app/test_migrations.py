@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
 import tempfile
@@ -95,10 +96,23 @@ class MigrateSQLTestCase(TestCase):
         )
         Book.objects.bulk_create(books)
         self.config = apps.get_app_config('test_app')
+        self.counter = 0
 
     def tearDown(self):
         if hasattr(self.config, 'custom_sql'):
             del self.config.custom_sql
+
+    def sample_sql(self):
+        self.counter += 1
+        return 'SELECT {}'.format(self.counter)
+
+    def _test_output(self, string_io, expected_lines):
+        lines = [ln.strip() for ln in string_io.getvalue().splitlines()]
+        assert len(expected_lines) > 0
+        self.assertIn(expected_lines[0], lines)
+        pos = lines.index(expected_lines[0])
+        for ln in lines: print ln
+        self.assertEqual(lines[pos:pos + len(expected_lines)], expected_lines)
 
     @contextmanager
     def temporary_migration_module(self, app_label='test_app', module=None):
@@ -172,6 +186,68 @@ class MigrateSQLTestCase(TestCase):
                 else:
                     result = run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
                     self.assertEqual(result, [(0,)])
+
+    def item(self, name, version, dependencies=None):
+        dependencies = dependencies or ()
+        deps = ', '.join(['_{name}{ver} {name}'.format(name=dep[1], ver=version)
+                          for dep in dependencies])
+        sql, reverse_sql = ('CREATE TYPE {name} AS ({deps}); -- {ver}'.format(
+            name=name, deps=deps, ver=version),
+                            'DROP TYPE {}'.format(name))
+        return SqlItem(name, sql, reverse_sql, dependencies=dependencies)
+
+    def test_migration_deps(self):
+        sql, reverse_sql = top_books_sql_v1()
+        sql2, reverse_sql2 = top_books_sql_v2()
+
+        with self.temporary_migration_module():
+            self.config.custom_sql = [
+                self.item('top_ratings', 1),
+                self.item('top_books', 1),
+                self.item('top_narrations', 1, dependencies=[
+                    ('test_app', 'top_sales'), ('test_app', 'top_books')]),
+                self.item('top_sales', 1),
+            ]
+            cmd_output = StringIO()
+            call_command('makemigrations', 'test_app', stdout=cmd_output)
+            expected = [
+                '- Create SQL "top_sales"',
+                '- Create SQL "top_books"',
+                '- Create SQL "top_narrations"',
+                '- Create SQL "top_ratings"',
+            ]
+            self._test_output(cmd_output, expected)
+
+            self.config.custom_sql = [
+                self.item('top_sales', 2),
+                self.item('top_ratings', 1),
+                self.item('top_editions', 1),
+                self.item('top_authors', 1,
+                          dependencies=[('test_app', 'top_books')]),
+                self.item('top_narrations', 1,  dependencies=[
+                    ('test_app', 'top_sales'), ('test_app', 'top_books')]),
+                self.item('top_books', 2, dependencies=[
+                    ('test_app', 'top_sales'), ('test_app', 'top_ratings')]),
+                self.item('top_products', 1, dependencies=[
+                    ('test_app', 'top_books'), ('test_app', 'top_authors'),
+                    ('test_app', 'top_editions')]),
+            ]
+            cmd_output = StringIO()
+            call_command('makemigrations', 'test_app', stdout=cmd_output)
+            expected = [
+                '- Reverse alter SQL "top_narrations"',
+                '- Reverse alter SQL "top_books"',
+                '- Reverse alter SQL "top_sales"',
+                '- Alter SQL "top_sales"',
+                '- Alter SQL "top_books"',
+                '- Create SQL "top_authors"',
+                '- Alter SQL "top_narrations"',
+                '- Create SQL "top_editions"',
+                '- Create SQL "top_products"',
+            ]
+            self._test_output(cmd_output, expected)
+            call_command('migrate', 'test_app')
+            call_command('migrate', 'test_app', 'zero')
 
     def test_migration_delete(self):
         progress_expected = (
