@@ -36,11 +36,11 @@ class SqlStateGraph(object):
             )
         self.node_map[child].add_parent(self.node_map[parent])
         self.node_map[parent].add_child(self.node_map[child])
-        self.clear_cache()
 
 
 def build_current_graph():
     graph = SqlStateGraph()
+    dependencies = []
     for config in apps.get_app_configs():
         if not hasattr(config, 'custom_sql'):
             continue
@@ -51,5 +51,9 @@ def build_current_graph():
                 SqlItemNode(sql_item.sql, sql_item.reverse_sql),
             )
             for dep in sql_item.dependencies:
-                graph.add_dependency(config.label, sql_item.name, dep)
+                dependencies.append((config.label, sql_item.name, dep))
+
+    for config_label, src, dep in dependencies:
+        graph.add_dependency(config_label, (config_label, src), dep)
+
     return graph
