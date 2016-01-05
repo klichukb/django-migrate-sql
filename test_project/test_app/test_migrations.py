@@ -7,6 +7,7 @@ import os
 from StringIO import StringIO
 from contextlib import contextmanager, nested
 from importlib import import_module
+from psycopg2.extras import register_composite, CompositeCaster
 
 from django.test import TestCase
 from django.db import connection
@@ -17,6 +18,11 @@ from django.test.utils import extend_sys_path
 
 from test_app.models import Book
 from migrate_sql import SqlItem
+
+
+class TupleComposite(CompositeCaster):
+    def make(self, values):
+        return tuple(values)
 
 
 def top_books_sql_v1():
@@ -193,16 +199,50 @@ class MigrateSQLTestCase(TestCase):
 
     def item(self, name, version, dependencies=None):
         dependencies = dependencies or ()
-        deps = ', '.join(['_{name}{ver} {name}'.format(name=dep[1], ver=version)
-                          for dep in dependencies])
-        sql, reverse_sql = ('CREATE TYPE {name} AS ({deps}); -- {ver}'.format(
-            name=name, deps=deps, ver=version),
+        args = ', '.join(['{name}{ver} {name}'.format(name=dep[1], ver=version)
+                          for dep in dependencies] + ['arg{i} int'.format(i=i + 1)
+                                                      for i in range(version)])
+        sql, reverse_sql = ('CREATE TYPE {name} AS ({args}); -- {ver}'.format(
+            name=name, args=args, ver=version),
                             'DROP TYPE {}'.format(name))
         return SqlItem(name, sql, reverse_sql, dependencies=dependencies)
 
+    def check_type(self, repr_sql, fetch_type, known_types, expect):
+        cursor = connection.cursor()
+        for _type in known_types:
+            register_composite(str(_type), cursor.cursor, factory=TupleComposite)
+
+        sql = 'SELECT ROW{repr_sql}::{ftype}'.format(repr_sql=repr_sql, ftype=fetch_type)
+        cursor.execute(sql)
+        result = cursor.fetchone()[0]
+        self.assertEqual(result, expect)
+
     def test_migration_deps(self):
-        sql, reverse_sql = top_books_sql_v1()
-        sql2, reverse_sql2 = top_books_sql_v2()
+        progress_expected = (
+            ('0004', [
+
+                # top_products check
+                ("(('(1, 2)', '(3)', 4, 5), (('(6, 7)', '(8)', 9, 10), 11), '(12)', 13)",
+                 'top_products',
+                 ['top_products', 'top_books', 'top_authors',
+                  'top_ratings', 'top_sales', 'top_editions'],
+                 (((1, 2), (3,), 4, 5), (((6, 7), (8,), 9, 10), 11), (12,), 13)),
+
+                # top_narrations check
+                ("('(1, 2)', ('(3, 4)', '(5)', 6, 7), 8)",
+                 'top_narrations',
+                 ['top_narrations', 'top_books', 'top_sales', 'top_ratings'],
+                 ((1, 2), ((3, 4), (5,), 6, 7), 8)),
+            ]),
+            ('0002', [
+
+                # top_narrations check
+                ("('(1)', '(2)', 3)",
+                 'top_narrations',
+                 ['top_ratings', 'top_books', 'top_sales', 'top_narrations'],
+                 ((1,), (2,), 3)),
+            ]),
+        )
 
         with nested(self.temporary_migration_module(app_label='test_app'),
                     self.temporary_migration_module(app_label='test_app2')):
@@ -255,7 +295,12 @@ class MigrateSQLTestCase(TestCase):
                 '- Create SQL "top_products"',
             ]
             self._test_output(cmd_output, expected)
-            call_command('migrate', 'test_app')
+
+            for migration, check_cases in progress_expected:
+                call_command('migrate', 'test_app', migration)
+                for check_case in check_cases:
+                    self.check_type(*check_case)
+
             call_command('migrate', 'test_app', 'zero')
 
     def test_migration_delete(self):
