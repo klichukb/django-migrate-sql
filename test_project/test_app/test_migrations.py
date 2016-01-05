@@ -25,60 +25,11 @@ class TupleComposite(CompositeCaster):
         return tuple(values)
 
 
-def top_books_sql_v1():
-    min_rating = 5
-    return (
-        # sql
-        [("""
-            CREATE OR REPLACE FUNCTION top_books()
-                RETURNS SETOF test_app_book AS $$
-            BEGIN
-                RETURN QUERY
-                    SELECT * FROM test_app_book ab
-                    WHERE ab.rating > %s
-                    ORDER BY ab.rating DESC;
-            END;
-            $$ LANGUAGE plpgsql;
-          """, [min_rating])],
-
-        # reverse sql
-        'DROP FUNCTION top_books()',
-    )
-
-
-def top_books_sql_v2():
-    min_rating = 5
-    return (
-        # sql
-        [("""
-            CREATE OR REPLACE FUNCTION top_books(min_rating int = %s)
-                RETURNS SETOF test_app_book AS $$
-            BEGIN
-                RETURN QUERY EXECUTE
-                   'SELECT * FROM test_app_book ab
-                    WHERE ab.rating > $1
-                    AND ab.published
-                    ORDER BY ab.rating DESC'
-                USING min_rating;
-            END;
-            $$ LANGUAGE plpgsql;
-          """, [min_rating])],
-
-        # reverse sql
-        'DROP FUNCTION top_books(int)',
-    )
-
-
-def run_query(sql, params=None):
-    cursor = connection.cursor()
-    cursor.execute(sql, params=params)
-    return cursor.fetchall()
-
 
 def module_dir(module):
     """
     Find the name of the directory that contains a module, if possible.
-    Raise ValueError otherwise, e.g. for namespace packages that are split
+    RMigrateaise ValueError otherwise, e.g. for namespace packages that are split
     over several directories.
     """
     # Convert to list because _NamespacePath does not support indexing on 3.3.
@@ -92,35 +43,16 @@ def module_dir(module):
     raise ValueError("Cannot determine directory containing %s" % module)
 
 
-class MigrateSQLTestCase(TestCase):
+class BaseMigrateSQLTestCase(TestCase):
     def setUp(self):
-        books = (
-            Book(name="Clone Wars", author="John Ben", rating=4, published=True),
-            Book(name="The mysterious dog", author="John Ben", rating=6, published=True),
-            Book(name="HTML 5", author="John Ben", rating=9, published=True),
-            Book(name="Management", author="John Ben", rating=8, published=False),
-            Book(name="Python 3", author="John Ben", rating=3, published=False),
-        )
-        Book.objects.bulk_create(books)
         self.config = apps.get_app_config('test_app')
         self.config2 = apps.get_app_config('test_app2')
-        self.counter = 0
 
     def tearDown(self):
         if hasattr(self.config, 'custom_sql'):
             del self.config.custom_sql
-
-    def sample_sql(self):
-        self.counter += 1
-        return 'SELECT {}'.format(self.counter)
-
-    def _test_output(self, string_io, expected_lines):
-        lines = [ln.strip() for ln in string_io.getvalue().splitlines()]
-        assert len(expected_lines) > 0
-        for ln in lines: print ln
-        #self.assertIn(expected_lines[0], lines)
-        #pos = lines.index(expected_lines[0])
-        #self.assertEqual(lines[pos:pos + len(expected_lines)], expected_lines)
+        if hasattr(self.config2, 'custom_sql'):
+            del self.config2.custom_sql
 
     @contextmanager
     def temporary_migration_module(self, app_label='test_app', module=None):
@@ -158,8 +90,62 @@ class MigrateSQLTestCase(TestCase):
         finally:
             shutil.rmtree(temp_dir)
 
+
+class MigrateSQLTestCase(BaseMigrateSQLTestCase):
+    top_books_sql_v1 = (
+        # sql
+        [("""
+            CREATE OR REPLACE FUNCTION top_books()
+                RETURNS SETOF test_app_book AS $$
+            BEGIN
+                RETURN QUERY
+                    SELECT * FROM test_app_book ab
+                    WHERE ab.rating > %s
+                    ORDER BY ab.rating DESC;
+            END;
+            $$ LANGUAGE plpgsql;
+          """, [5])],
+        # reverse sql
+        'DROP FUNCTION top_books()',
+    )
+
+    top_books_sql_v2 = (
+        # sql
+        [("""
+            CREATE OR REPLACE FUNCTION top_books(min_rating int = %s)
+                RETURNS SETOF test_app_book AS $$
+            BEGIN
+                RETURN QUERY EXECUTE
+                   'SELECT * FROM test_app_book ab
+                    WHERE ab.rating > $1
+                    AND ab.published
+                    ORDER BY ab.rating DESC'
+                USING min_rating;
+            END;
+            $$ LANGUAGE plpgsql;
+          """, [5])],
+        # reverse sql
+        'DROP FUNCTION top_books(int)',
+    )
+
+    def setUp(self):
+        super(MigrateSQLTestCase, self).setUp()
+        books = (
+            Book(name="Clone Wars", author="John Ben", rating=4, published=True),
+            Book(name="The mysterious dog", author="John Ben", rating=6, published=True),
+            Book(name="HTML 5", author="John Ben", rating=9, published=True),
+            Book(name="Management", author="John Ben", rating=8, published=False),
+            Book(name="Python 3", author="John Ben", rating=3, published=False),
+        )
+        Book.objects.bulk_create(books)
+
+    def run_query(self, sql, params=None):
+        cursor = connection.cursor()
+        cursor.execute(sql, params=params)
+        return cursor.fetchall()
+
     def test_migration_add(self):
-        sql, reverse_sql = top_books_sql_v1()
+        sql, reverse_sql = self.top_books_sql_v1
         self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
         cmd_output = StringIO()
         with self.temporary_migration_module():
@@ -169,7 +155,7 @@ class MigrateSQLTestCase(TestCase):
             self.assertIn(expected_log, lines)
 
             call_command('migrate', 'test_app', stdout=cmd_output)
-            result = run_query('SELECT name FROM top_books()')
+            result = self.run_query('SELECT name FROM top_books()')
             self.assertEqual(result, [('HTML 5',), ('Management',), ('The mysterious dog',)])
 
     def test_migration_change(self):
@@ -178,7 +164,7 @@ class MigrateSQLTestCase(TestCase):
             ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
             ('0001', None),
         )
-        sql, reverse_sql = top_books_sql_v2()
+        sql, reverse_sql = self.top_books_sql_v2
         self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
 
         cmd_output = StringIO()
@@ -191,11 +177,50 @@ class MigrateSQLTestCase(TestCase):
             for migration, expected in progress_expected:
                 call_command('migrate', 'test_app', migration, stdout=cmd_output)
                 if expected:
-                    result = run_query('SELECT name FROM top_books()')
+                    result = self.run_query('SELECT name FROM top_books()')
                     self.assertEqual(result, expected)
                 else:
-                    result = run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
+                    result = self.run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
                     self.assertEqual(result, [(0,)])
+
+    def test_migration_delete(self):
+        progress_expected = (
+            ('0003', None),
+            ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
+        )
+
+        cmd_output = StringIO()
+        with self.temporary_migration_module(module='test_app.migrations_v1'):
+            self.config.custom_sql = []
+            call_command('makemigrations', 'test_app', stdout=cmd_output)
+            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
+            self.assertIn('- Delete SQL "top_books"', lines)
+
+            sql, reverse_sql = self.top_books_sql_v2
+            self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+            call_command('makemigrations', 'test_app', stdout=cmd_output)
+            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
+            self.assertIn('- Create SQL "top_books"', lines)
+
+            for migration, expected in progress_expected:
+                call_command('migrate', 'test_app', migration, stdout=cmd_output)
+                if expected:
+                    result = self.run_query('SELECT name FROM top_books()')
+                    self.assertEqual(result, expected)
+                else:
+                    result = self.run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
+                    self.assertEqual(result, [(0,)])
+
+
+class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
+
+    def _test_output(self, string_io, expected_lines):
+        lines = [ln.strip() for ln in string_io.getvalue().splitlines()]
+        assert len(expected_lines) > 0
+        for ln in lines: print ln
+        #self.assertIn(expected_lines[0], lines)
+        #pos = lines.index(expected_lines[0])
+        #self.assertEqual(lines[pos:pos + len(expected_lines)], expected_lines)
 
     def item(self, name, version, dependencies=None):
         dependencies = dependencies or ()
@@ -219,7 +244,7 @@ class MigrateSQLTestCase(TestCase):
 
     def test_migration_deps(self):
         progress_expected = (
-            ('0004', [
+            (('test_app', '0004'), [
 
                 # top_products check
                 ("(('(1, 2)', '(3)', 4, 5), (('(6, 7)', '(8)', 9, 10), 11), '(12)', 13)",
@@ -234,7 +259,13 @@ class MigrateSQLTestCase(TestCase):
                  ['top_narrations', 'top_books', 'top_sales', 'top_ratings'],
                  ((1, 2), ((3, 4), (5,), 6, 7), 8)),
             ]),
-            ('0002', [
+            (('test_app', '0002'), [
+
+                # top_narrations check
+                ("('(1)', '(2)', 3)",
+                 'top_narrations',
+                 ['top_ratings', 'top_books', 'top_sales', 'top_narrations'],
+                 ((1,), (2,), 3)),
 
                 # top_narrations check
                 ("('(1)', '(2)', 3)",
@@ -302,31 +333,3 @@ class MigrateSQLTestCase(TestCase):
                     self.check_type(*check_case)
 
             call_command('migrate', 'test_app', 'zero')
-
-    def test_migration_delete(self):
-        progress_expected = (
-            ('0003', None),
-            ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
-        )
-
-        cmd_output = StringIO()
-        with self.temporary_migration_module(module='test_app.migrations_v1'):
-            self.config.custom_sql = []
-            call_command('makemigrations', 'test_app', stdout=cmd_output)
-            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
-            self.assertIn('- Delete SQL "top_books"', lines)
-
-            sql, reverse_sql = top_books_sql_v2()
-            self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
-            call_command('makemigrations', 'test_app', stdout=cmd_output)
-            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
-            self.assertIn('- Create SQL "top_books"', lines)
-
-            for migration, expected in progress_expected:
-                call_command('migrate', 'test_app', migration, stdout=cmd_output)
-                if expected:
-                    result = run_query('SELECT name FROM top_books()')
-                    self.assertEqual(result, expected)
-                else:
-                    result = run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
-                    self.assertEqual(result, [(0,)])
