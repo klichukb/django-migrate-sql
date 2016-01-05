@@ -10,6 +10,7 @@ class SqlStateGraph(object):
     def __init__(self):
         self.nodes = {}
         self.node_map = {}
+        self.dependencies = []
 
     def remove_node(self, key):
         # TODO: Dummy for Issue #2
@@ -23,24 +24,27 @@ class SqlStateGraph(object):
         self.node_map[key] = node
         self.nodes[key] = sql_item
 
-    def add_dependency(self, app_label, child, parent):
-        if child not in self.nodes:
-            raise NodeNotFoundError(
-                "App %s dependencies reference nonexistent child node %r" % (app_label, child),
-                child
-            )
-        if parent not in self.nodes:
-            raise NodeNotFoundError(
-                "App %s dependencies reference nonexistent parent node %r" % (app_label, parent),
-                parent
-            )
-        self.node_map[child].add_parent(self.node_map[parent])
-        self.node_map[parent].add_child(self.node_map[child])
+    def add_lazy_dependency(self, app_label, child, parent):
+        self.dependencies.append((app_label, child, parent))
+
+    def resolve_dependencies(self):
+        for app_label, child, parent in self.dependencies:
+            if child not in self.nodes:
+                raise NodeNotFoundError(
+                    "App %s dependencies reference nonexistent child node %r" % (app_label, child),
+                    child
+                )
+            if parent not in self.nodes:
+                raise NodeNotFoundError(
+                    "App %s dependencies reference nonexistent parent node %r" % (app_label, parent),
+                    parent
+                )
+            self.node_map[child].add_parent(self.node_map[parent])
+            self.node_map[parent].add_child(self.node_map[child])
 
 
 def build_current_graph():
     graph = SqlStateGraph()
-    dependencies = []
     for config in apps.get_app_configs():
         if not hasattr(config, 'custom_sql'):
             continue
@@ -51,9 +55,8 @@ def build_current_graph():
                 SqlItemNode(sql_item.sql, sql_item.reverse_sql),
             )
             for dep in sql_item.dependencies:
-                dependencies.append((config.label, sql_item.name, dep))
+                graph.add_lazy_dependency(
+                    config.label, (config.label, sql_item.name), dep)
 
-    for config_label, src, dep in dependencies:
-        graph.add_dependency(config_label, (config_label, src), dep)
-
+    graph.resolve_dependencies()
     return graph
