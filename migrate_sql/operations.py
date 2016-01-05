@@ -7,6 +7,8 @@ class BaseMigrateSQL(RunSQL):
     def deconstruct(self):
         name, args, kwargs = super(BaseMigrateSQL, self).deconstruct()
         kwargs['name'] = self.name
+        if self.dependencies:
+            kwargs['dependencies'] = [dep.key for dep in self.dependencies]
         return (name, args, kwargs)
 
     def __init__(self, name, sql, reverse_sql=None, state_operations=None, hints=None,
@@ -42,7 +44,7 @@ class AlterSQL(BaseAlterSQL):
             SqlItemNode(self.sql, self.reverse_sql),
         )
         for dep in self.dependencies:
-            custom_sql.add_dependency(app_label, self.name, dep)
+            custom_sql.add_lazy_dependency(app_label, (app_label, self.name), dep)
 
 
 class CreateSQL(AlterSQL):

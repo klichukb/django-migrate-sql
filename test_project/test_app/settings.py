@@ -38,6 +38,7 @@ INSTALLED_APPS = (
     'django.contrib.staticfiles',
     'migrate_sql',
     'test_app',
+    'test_app2',
 )
 
 MIDDLEWARE_CLASSES = (
