@@ -72,6 +72,9 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                 continue
             app_label, sql_name = key
             old_node = self.from_sql_graph.nodes[key]
+            if not old_node.reverse_sql:
+                continue
+
             # migrate backwards
             operation = ReverseAlterSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql)
             sql_deps = self.from_sql_graph.node_map[key].children
@@ -81,12 +84,8 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                 info = latest_operations.get(sql_dep)
                 dep = (sql_dep[0], SQL_BLOB, sql_dep[1], info)
                 deps.append(dep)
-            if old_node.reverse_sql:
-                self.add_operation(
-                    app_label,
-                    operation,
-                    dependencies=deps,
-                )
+
+            self.add_operation(app_label, operation, dependencies=deps)
             latest_operations[key] = operation
 
     def _generate_sql(self, keys, changed_keys, latest_operations):
@@ -97,17 +96,13 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             sql_deps = self.to_sql_graph.node_map[key].parents
             operation = operation_cls(sql_name, new_node.sql, reverse_sql=new_node.reverse_sql,
                                       dependencies=set(sql_deps))
-            deps = []
             sql_deps.add(key)
+            deps = []
             for sql_dep in sql_deps:
                 info = latest_operations.get(sql_dep)
                 dep = (sql_dep[0], SQL_BLOB, sql_dep[1], info)
                 deps.append(dep)
-            self.add_operation(
-                app_label,
-                operation,
-                dependencies=deps,
-            )
+            self.add_operation(app_label, operation, dependencies=deps)
             latest_operations[key] = operation
 
     def _generate_delete_sql(self, deleted_keys, latest_operations):
