@@ -219,7 +219,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
             ('0001', None),
         )
-        self.check_migrations(expected_content, expected_results, 'test_app.migrations_v1')
+        self.check_migrations(expected_content, expected_results, 'test_app.migrations_change')
 
     def test_migration_delete(self):
         self.config.custom_sql = []
@@ -233,7 +233,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         expected_results = (
             ('0003', None),
         )
-        self.check_migrations(expected_content, expected_results, 'test_app.migrations_v1')
+        self.check_migrations(expected_content, expected_results, 'test_app.migrations_change')
 
     def test_migration_recreate(self):
         sql, reverse_sql = self.SQL_V2
