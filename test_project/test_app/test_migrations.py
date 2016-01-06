@@ -256,7 +256,6 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
     RESULTS_EXPECTED = {
         ('test_app', '0004'): [
-
             # product check
             ("(('(1, 2)', '(3)', 4, 5), (('(6, 7)', '(8)', 9, 10), 11), '(12)', 13)",
              'product',
@@ -271,15 +270,19 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
              ((1, 2), ((3, 4), (5,), 6, 7), 8)),
         ],
         ('test_app', '0002'): [
-
             # narration check
             ("('(1)', '(2)', 3)",
              'narration',
              ['rating', 'book', 'sale', 'narration'],
              ((1,), (2,), 3)),
         ],
+        ('test_app2', 'zero'): [
+            # edition check
+            (None, 'edition', [], None),
+            # ratings check
+            (None, 'ratings', [], None),
+        ],
         ('test_app', '0005'): [
-
             # narration check
             ("(1)", 'edition', ['edition'], (1,)),
 
@@ -307,14 +310,10 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
                                [fetch_type])
             self.assertEqual(result, [(0,)])
 
-    def check_migrations(self, content, migrations,
-                         module=None, module2=None, migrate_apps=None):
-        if migrate_apps is None:
-            migrate_apps = ('test_app',)
+    def check_migrations(self, content, migrations, module=None, module2=None):
         with nested(self.temporary_migration_module(app_label='test_app', module=module),
                     self.temporary_migration_module(app_label='test_app2', module=module2)):
-            for app in migrate_apps:
-                call_command('makemigrations', app, stdout=self.out)
+            call_command('makemigrations', stdout=self.out)
             self.check_migrations_content(content)
 
             for app_label, migration in migrations:
@@ -398,19 +397,19 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
                  ('DeleteSQL', 'author'), ('DeleteSQL', 'book')],
             ),
             ('test_app2', '0003'): (
-                [('test_app2', '0002')],
+                [('test_app', '0005'), ('test_app2', '0002')],
                 [('DeleteSQL', 'sale')],
             ),
         }
         migrations = (
             ('test_app', '0005'),
             ('test_app', '0002'),
-            ('test_app', '0004'),
+            ('test_app2', 'zero'),
             ('test_app', '0005'),
             ('test_app2', '0003'),
+            ('test_app', '0004'),
         )
         self.check_migrations(
             expected_content, migrations,
-            migrate_apps=('test_app', 'test_app2'),
             module='test_app.migrations_deps_delete', module2='test_app2.migrations_deps_delete',
         )
