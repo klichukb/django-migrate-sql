@@ -295,6 +295,19 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         result = cursor.fetchone()[0]
         self.assertEqual(result, expect)
 
+    def check_migrations(self, content, migrations,
+                         module=None, module2=None, app_label='test_app'):
+        with nested(self.temporary_migration_module(app_label='test_app', module=module),
+                    self.temporary_migration_module(app_label='test_app2', module=module2)):
+            call_command('makemigrations', app_label, stdout=self.out)
+            self.check_migrations_content(content)
+
+            for migration in migrations:
+                call_command('migrate', app_label, migration, stdout=self.out)
+                check_cases = self.RESULTS_EXPECTED[migration]
+                for check_case in check_cases:
+                    self.check_type(*check_case)
+
     def test_deps_create(self):
         self.config.custom_sql = [
             item('rating', 1),
@@ -313,11 +326,10 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
                  ('CreateSQL', 'narration')],
             ),
         }
-        with nested(self.temporary_migration_module(app_label='test_app'),
-                    self.temporary_migration_module(app_label='test_app2')):
-
-            call_command('makemigrations', 'test_app', stdout=self.out)
-            self.check_migrations_content(expected_content)
+        migrations = (
+            ('test_app', '0002'),
+        )
+        self.check_migrations(expected_content, migrations)
 
     def test_deps_update(self):
         self.config.custom_sql = [
@@ -352,15 +364,7 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0002'),
             ('test_app', '0004'),
         )
-        with nested(self.temporary_migration_module(app_label='test_app',
-                                                    module='test_app.migrations_deps_update'),
-                    self.temporary_migration_module(app_label='test_app2',
-                                                    module='test_app2.migrations_deps_update')):
-            call_command('makemigrations', 'test_app', stdout=self.out)
-            self.check_migrations_content(expected_content)
-
-            for migration in migrations:
-                call_command('migrate', 'test_app', migration, stdout=self.out)
-                check_cases = self.RESULTS_EXPECTED[migration]
-                for check_case in check_cases:
-                    self.check_type(*check_case)
+        self.check_migrations(
+            expected_content, migrations,
+            module='test_app.migrations_deps_update', module2='test_app2.migrations_deps_update',
+        )
