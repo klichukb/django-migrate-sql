@@ -54,6 +54,10 @@ def item(name, version, dependencies=None):
     return SqlItem(name, sql, reverse_sql, dependencies=dependencies)
 
 
+def mig_name(name):
+    return name[0], name[1][:4]
+
+
 class BaseMigrateSQLTestCase(TestCase):
     def setUp(self):
         super(BaseMigrateSQLTestCase, self).setUp()
@@ -248,12 +252,8 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(expected_content, expected_results, 'test_app.migrations_recreate')
 
 
-def mig_name(name):
-    return name[0], name[1][:4]
-
-
 class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
-    RESULT_EXPECTED = {
+    RESULTS_EXPECTED = {
         ('test_app', '0004'): [
 
             # product check
@@ -361,6 +361,6 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
 
             for migration in migrations:
                 call_command('migrate', 'test_app', migration, stdout=self.out)
-                check_cases = self.RESULT_EXPECTED[migration]
+                check_cases = self.RESULTS_EXPECTED[migration]
                 for check_case in check_cases:
                     self.check_type(*check_case)
