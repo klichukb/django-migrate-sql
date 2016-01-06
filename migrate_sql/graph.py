@@ -3,17 +3,20 @@ from collections import namedtuple
 from django.db.migrations.graph import Node, NodeNotFoundError
 from django.apps import apps
 
-SqlItemNode = namedtuple('SqlItemNode', ('sql', 'reverse_sql'))
+SQLItemNode = namedtuple('SQLItemNode', ('sql', 'reverse_sql'))
 
 
-class SqlStateGraph(object):
+class SQLStateGraph(object):
+    """
+    Represents graph assembled by SQL items as nodes and parent-child relations as arcs.
+    """
     def __init__(self):
         self.nodes = {}
         self.node_map = {}
         self.dependencies = []
 
     def remove_node(self, key):
-        # TODO: Dummy for Issue #2
+        # XXX: Workaround for Issue #2
         # Silences state aggregation problem in `migrate` command.
         if key in self.nodes and key in self.node_map:
             del self.nodes[key]
@@ -25,9 +28,15 @@ class SqlStateGraph(object):
         self.nodes[key] = sql_item
 
     def add_lazy_dependency(self, app_label, child, parent):
+        """
+        Add dependency to be resolved and applied later.
+        """
         self.dependencies.append((app_label, child, parent))
 
     def remove_lazy_dependencies(self, app_label, child):
+        """
+        Remove dependency to be resolved and applied later.
+        """
         remove_deps = []
         for dep in self.dependencies:
             if dep[0] == app_label and dep[1] == child:
@@ -35,7 +44,10 @@ class SqlStateGraph(object):
         for dep in remove_deps:
             self.dependencies.remove(dep)
 
-    def resolve_dependencies(self):
+    def build_graph(self):
+        """
+        Read lazy dependency list and build graph.
+        """
         for app_label, child, parent in self.dependencies:
             if child not in self.nodes:
                 raise NodeNotFoundError(
@@ -52,7 +64,13 @@ class SqlStateGraph(object):
 
 
 def build_current_graph():
-    graph = SqlStateGraph()
+    """
+    Read current state of SQL items from the current project state.
+
+    Returns:
+        (SQLStateGraph) Current project state graph.
+    """
+    graph = SQLStateGraph()
     for config in apps.get_app_configs():
         if not hasattr(config, 'custom_sql'):
             continue
@@ -60,11 +78,10 @@ def build_current_graph():
         for sql_item in config.custom_sql:
             graph.add_node(
                 (config.label, sql_item.name),
-                SqlItemNode(sql_item.sql, sql_item.reverse_sql),
+                SQLItemNode(sql_item.sql, sql_item.reverse_sql),
             )
             for dep in sql_item.dependencies:
                 graph.add_lazy_dependency(
                     config.label, (config.label, sql_item.name), dep)
-
-    graph.resolve_dependencies()
+    graph.build_graph()
     return graph

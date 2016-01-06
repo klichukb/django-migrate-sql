@@ -18,7 +18,7 @@ from django.conf import settings
 from django.test.utils import extend_sys_path
 
 from test_app.models import Book
-from migrate_sql import SqlItem
+from migrate_sql import SQLItem
 
 
 class TupleComposite(CompositeCaster):
@@ -51,7 +51,7 @@ def item(name, version, dependencies=None):
     sql, reverse_sql = ('CREATE TYPE {name} AS ({args}); -- {ver}'.format(
         name=name, args=args, ver=version),
                         'DROP TYPE {}'.format(name))
-    return SqlItem(name, sql, reverse_sql, dependencies=dependencies)
+    return SQLItem(name, sql, reverse_sql, dependencies=dependencies)
 
 
 def mig_name(name):
@@ -197,7 +197,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
     def test_migration_add(self):
         sql, reverse_sql = self.SQL_V1
-        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+        self.config.custom_sql = [SQLItem('top_books', sql, reverse_sql)]
         expected_content = {
             ('test_app', '0002'): (
                 True,
@@ -212,7 +212,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
     def test_migration_change(self):
         sql, reverse_sql = self.SQL_V2
-        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+        self.config.custom_sql = [SQLItem('top_books', sql, reverse_sql)]
 
         expected_content = {
             ('test_app', '0003'): (
@@ -245,7 +245,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
     def test_migration_recreate(self):
         sql, reverse_sql = self.SQL_V2
-        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+        self.config.custom_sql = [SQLItem('top_books', sql, reverse_sql)]
 
         expected_content = {
             ('test_app', '0004'): (

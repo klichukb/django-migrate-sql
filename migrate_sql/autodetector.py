@@ -1,7 +1,7 @@
 from django.db.migrations.autodetector import MigrationAutodetector as DjangoMigrationAutodetector
 
 from migrate_sql.operations import AlterSQL, ReverseAlterSQL, CreateSQL, DeleteSQL
-from migrate_sql.graph import SqlStateGraph
+from migrate_sql.graph import SQLStateGraph
 
 
 class SQLBlob(object):
@@ -62,8 +62,8 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
     def __init__(self, from_state, to_state, questioner=None, to_sql_graph=None):
         super(MigrationAutodetector, self).__init__(from_state, to_state, questioner)
         self.to_sql_graph = to_sql_graph
-        self.from_sql_graph = getattr(self.from_state, 'custom_sql', None) or SqlStateGraph()
-        self.from_sql_graph.resolve_dependencies()
+        self.from_sql_graph = getattr(self.from_state, 'custom_sql', None) or SQLStateGraph()
+        self.from_sql_graph.build_graph()
         self._sql_operations = []
 
     def sort_sql_changes(self, keys, resolve_keys, node_map):
@@ -79,7 +79,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                 dont require respective reverse operations.
             resolve_keys (list): List of migration keys, that are changing existing items,
                 and may require respective reverse operations.
-            node_map (dict): See `graph.SqlStateGraph.node_map`.
+            node_map (dict): See `graph.SQLStateGraph.node_map`.
         Returns:
             (list) Sorted sequence of migration keys, enriched with dependencies.
         """

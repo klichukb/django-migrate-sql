@@ -1,6 +1,6 @@
 from django.db.migrations.operations import RunSQL
 
-from migrate_sql.graph import SqlStateGraph, SqlItemNode
+from migrate_sql.graph import SQLStateGraph, SQLItemNode
 
 
 class BaseMigrateSQL(RunSQL):
@@ -27,7 +27,7 @@ class ReverseAlterSQL(BaseMigrateSQL):
 class BaseAlterSQL(BaseMigrateSQL):
     def get_sql_state(self, state):
         if not hasattr(state, 'custom_sql'):
-            setattr(state, 'custom_sql', SqlStateGraph())
+            setattr(state, 'custom_sql', SQLStateGraph())
         return state.custom_sql
 
 
@@ -41,7 +41,7 @@ class AlterSQL(BaseAlterSQL):
 
         custom_sql.add_node(
             (app_label, self.name),
-            SqlItemNode(self.sql, self.reverse_sql),
+            SQLItemNode(self.sql, self.reverse_sql),
         )
         for dep in self.dependencies:
             custom_sql.add_lazy_dependency(app_label, (app_label, self.name), dep)
