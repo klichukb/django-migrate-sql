@@ -11,6 +11,7 @@ from psycopg2.extras import register_composite, CompositeCaster
 
 from django.test import TestCase
 from django.db import connection
+from django.db.migrations.loader import MigrationLoader
 from django.apps import apps
 from django.core.management import call_command
 from django.conf import settings
@@ -23,7 +24,6 @@ from migrate_sql import SqlItem
 class TupleComposite(CompositeCaster):
     def make(self, values):
         return tuple(values)
-
 
 
 def module_dir(module):
@@ -212,15 +212,42 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
                     self.assertEqual(result, [(0,)])
 
 
-class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
+def mig_name(name):
+    return name[0], name[1][:4]
 
-    def _test_output(self, string_io, expected_lines):
-        lines = [ln.strip() for ln in string_io.getvalue().splitlines()]
-        assert len(expected_lines) > 0
-        for ln in lines: print ln
-        #self.assertIn(expected_lines[0], lines)
-        #pos = lines.index(expected_lines[0])
-        #self.assertEqual(lines[pos:pos + len(expected_lines)], expected_lines)
+
+class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
+    RESULT_EXPECTED = {
+        ('test_app', '0004'): [
+
+            # product check
+            ("(('(1, 2)', '(3)', 4, 5), (('(6, 7)', '(8)', 9, 10), 11), '(12)', 13)",
+             'product',
+             ['product', 'book', 'author',
+              'rating', 'sale', 'edition'],
+             (((1, 2), (3,), 4, 5), (((6, 7), (8,), 9, 10), 11), (12,), 13)),
+
+            # narration check
+            ("('(1, 2)', ('(3, 4)', '(5)', 6, 7), 8)",
+             'narration',
+             ['narration', 'book', 'sale', 'rating'],
+             ((1, 2), ((3, 4), (5,), 6, 7), 8)),
+        ],
+        ('test_app', '0002'): [
+
+            # narration check
+            ("('(1)', '(2)', 3)",
+             'narration',
+             ['rating', 'book', 'sale', 'narration'],
+             ((1,), (2,), 3)),
+
+            # narration check
+            ("('(1)', '(2)', 3)",
+             'narration',
+             ['rating', 'book', 'sale', 'narration'],
+             ((1,), (2,), 3)),
+        ],
+    }
 
     def item(self, name, version, dependencies=None):
         dependencies = dependencies or ()
@@ -242,94 +269,85 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         result = cursor.fetchone()[0]
         self.assertEqual(result, expect)
 
-    def test_migration_deps(self):
-        progress_expected = (
-            (('test_app', '0004'), [
+    def check_migrations(self, expected):
+        loader = MigrationLoader(None, load=True)
+        available = loader.disk_migrations.keys()
+        for expc_mig, (dependencies, operations) in expected.items():
+            key = next((mig for mig in available if mig_name(mig) == mig_name(expc_mig)), None)
+            self.assertIsNotNone(key, 'Expected migration {} not found.'.format(expc_mig))
+            migration = loader.disk_migrations[key]
+            self.assertEqual([mig_name(dep) for dep in migration.dependencies], dependencies)
+            self.assertEqual([(op.__class__.__name__, op.name) for op in migration.operations],
+                             operations)
 
-                # top_products check
-                ("(('(1, 2)', '(3)', 4, 5), (('(6, 7)', '(8)', 9, 10), 11), '(12)', 13)",
-                 'top_products',
-                 ['top_products', 'top_books', 'top_authors',
-                  'top_ratings', 'top_sales', 'top_editions'],
-                 (((1, 2), (3,), 4, 5), (((6, 7), (8,), 9, 10), 11), (12,), 13)),
-
-                # top_narrations check
-                ("('(1, 2)', ('(3, 4)', '(5)', 6, 7), 8)",
-                 'top_narrations',
-                 ['top_narrations', 'top_books', 'top_sales', 'top_ratings'],
-                 ((1, 2), ((3, 4), (5,), 6, 7), 8)),
-            ]),
-            (('test_app', '0002'), [
-
-                # top_narrations check
-                ("('(1)', '(2)', 3)",
-                 'top_narrations',
-                 ['top_ratings', 'top_books', 'top_sales', 'top_narrations'],
-                 ((1,), (2,), 3)),
-
-                # top_narrations check
-                ("('(1)', '(2)', 3)",
-                 'top_narrations',
-                 ['top_ratings', 'top_books', 'top_sales', 'top_narrations'],
-                 ((1,), (2,), 3)),
-            ]),
-        )
+    def test_deps_create(self):
+        self.config.custom_sql = [
+            self.item('rating', 1),
+            self.item('book', 1),
+            self.item('narration', 1, [('test_app2', 'sale'), ('test_app', 'book')]),
+        ]
+        self.config2.custom_sql = [self.item('sale', 1)]
+        expected = {
+            ('test_app2', '0001'): (
+                [],
+                [('CreateSQL', 'sale')],
+            ),
+            ('test_app', '0002'): (
+                [('test_app2', '0001'), ('test_app', '0001')],
+                [('CreateSQL', 'book'), ('CreateSQL', 'rating'),
+                 ('CreateSQL', 'narration')]
+            ),
+        }
 
         with nested(self.temporary_migration_module(app_label='test_app'),
                     self.temporary_migration_module(app_label='test_app2')):
-            self.config.custom_sql = [
-                self.item('top_ratings', 1),
-                self.item('top_books', 1),
-                self.item('top_narrations', 1, dependencies=[
-                    ('test_app2', 'top_sales'), ('test_app', 'top_books')]),
-            ]
-            self.config2.custom_sql = [
-                self.item('top_sales', 1),
-            ]
-            cmd_output = StringIO()
-            call_command('makemigrations', 'test_app', stdout=cmd_output)
-            expected = [
-                '- Create SQL "top_sales"',
-                '- Create SQL "top_books"',
-                '- Create SQL "top_narrations"',
-                '- Create SQL "top_ratings"',
-            ]
-            self._test_output(cmd_output, expected)
 
-            self.config.custom_sql = [
-                self.item('top_ratings', 1),
-                self.item('top_editions', 1),
-                self.item('top_authors', 1,
-                          dependencies=[('test_app', 'top_books')]),
-                self.item('top_narrations', 1,  dependencies=[
-                    ('test_app2', 'top_sales'), ('test_app', 'top_books')]),
-                self.item('top_books', 2, dependencies=[
-                    ('test_app2', 'top_sales'), ('test_app', 'top_ratings')]),
-                self.item('top_products', 1, dependencies=[
-                    ('test_app', 'top_books'), ('test_app', 'top_authors'),
-                    ('test_app', 'top_editions')]),
-            ]
-            self.config2.custom_sql = [
-                self.item('top_sales', 2),
-            ]
-            cmd_output = StringIO()
-            call_command('makemigrations', 'test_app', stdout=cmd_output)
-            expected = [
-                '- Reverse alter SQL "top_narrations"',
-                '- Reverse alter SQL "top_books"',
-                '- Reverse alter SQL "top_sales"',
-                '- Alter SQL "top_sales"',
-                '- Alter SQL "top_books"',
-                '- Create SQL "top_authors"',
-                '- Alter SQL "top_narrations"',
-                '- Create SQL "top_editions"',
-                '- Create SQL "top_products"',
-            ]
-            self._test_output(cmd_output, expected)
+            call_command('makemigrations', 'test_app')
+            self.check_migrations(expected)
 
-            for migration, check_cases in progress_expected:
+    def test_deps_update(self):
+        migrations = (
+            ('test_app', '0004'),
+            ('test_app', '0002'),
+            ('test_app', '0004'),
+        )
+        self.config.custom_sql = [
+            self.item('rating', 1),
+            self.item('edition', 1),
+            self.item('author', 1, [('test_app', 'book')]),
+            self.item('narration', 1,  [('test_app2', 'sale'), ('test_app', 'book')]),
+            self.item('book', 2, [('test_app2', 'sale'), ('test_app', 'rating')]),
+            self.item('product', 1, [('test_app', 'book'), ('test_app', 'author'),
+                                     ('test_app', 'edition')]),
+        ]
+        self.config2.custom_sql = [self.item('sale', 2)]
+
+        expected = {
+            ('test_app', '0003'): (
+                [('test_app', '0002')],
+                [('ReverseAlterSQL', 'narration'), ('CreateSQL', 'edition'),
+                 ('ReverseAlterSQL', 'book')],
+            ),
+            ('test_app2', '0002'): (
+                [('test_app', '0003'), ('test_app2', '0001')],
+                [('ReverseAlterSQL', 'sale'), ('AlterSQL', 'sale')],
+            ),
+            ('test_app', '0004'): (
+                [('test_app2', '0002'), ('test_app', '0003')],
+                [('AlterSQL', 'book'), ('CreateSQL', 'author'),
+                 ('AlterSQL', 'narration'), ('CreateSQL', 'product')],
+            ),
+        }
+
+        with nested(self.temporary_migration_module(app_label='test_app',
+                                                    module='test_app.migrations_deps_update'),
+                    self.temporary_migration_module(app_label='test_app2',
+                                                    module='test_app2.migrations_deps_update')):
+            call_command('makemigrations', 'test_app')
+            self.check_migrations(expected)
+
+            for migration in migrations:
                 call_command('migrate', 'test_app', migration)
+                check_cases = self.RESULT_EXPECTED[migration]
                 for check_case in check_cases:
                     self.check_type(*check_case)
-
-            call_command('migrate', 'test_app', 'zero')
