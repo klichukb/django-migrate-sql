@@ -66,27 +66,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                         changed_keys.add(desc)
         return result_keys
 
-    def generate_changed_sql(self):
-        from_keys = set(self.from_sql_graph.nodes.keys())
-        to_keys = set(self.to_sql_graph.nodes.keys())
-        new_keys = to_keys - from_keys
-        deleted_keys = from_keys - to_keys
-        changed_keys = set()
-
-        for key in from_keys & to_keys:
-            # Compare SQL of `from` and `to` states. If they match -- no changes have been
-            # made. Sides can be both strings and lists of 2-tuples,
-            # natively supported by Django's RunSQL:
-            #
-            # https://docs.djangoproject.com/en/1.8/ref/migration-operations/#runsql
-            if is_sql_equal(self.from_sql_graph.nodes[key].sql, self.to_sql_graph.nodes[key].sql):
-                continue
-            changed_keys.add(key)
-
-        keys = self.sort_sql_changes(new_keys, changed_keys)
-
-        latest_operations = {}
-
+    def _generate_reversed_sql(self, keys, changed_keys, latest_operations):
         for key in keys:
             if key not in changed_keys:
                 continue
@@ -109,6 +89,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                 )
             latest_operations[key] = operation
 
+    def _generate_sql(self, keys, changed_keys, latest_operations):
         for key in reversed(keys):
             app_label, sql_name = key
             new_node = self.to_sql_graph.nodes[key]
@@ -129,6 +110,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             )
             latest_operations[key] = operation
 
+    def _generate_delete_sql(self, deleted_keys, latest_operations):
         for key in deleted_keys:
             app_label, sql_name = key
             old_node = self.from_sql_graph.nodes[key]
@@ -136,6 +118,30 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                 app_label,
                 DeleteSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql),
             )
+
+    def generate_changed_sql(self):
+        from_keys = set(self.from_sql_graph.nodes.keys())
+        to_keys = set(self.to_sql_graph.nodes.keys())
+        new_keys = to_keys - from_keys
+        deleted_keys = from_keys - to_keys
+        changed_keys = set()
+
+        for key in from_keys & to_keys:
+            # Compare SQL of `from` and `to` states. If they match -- no changes have been
+            # made. Sides can be both strings and lists of 2-tuples,
+            # natively supported by Django's RunSQL:
+            #
+            # https://docs.djangoproject.com/en/1.8/ref/migration-operations/#runsql
+            if is_sql_equal(self.from_sql_graph.nodes[key].sql, self.to_sql_graph.nodes[key].sql):
+                continue
+            changed_keys.add(key)
+
+        keys = self.sort_sql_changes(new_keys, changed_keys)
+        latest_operations = {}
+
+        self._generate_reversed_sql(keys, changed_keys, latest_operations)
+        self._generate_sql(keys, changed_keys, latest_operations)
+        self._generate_delete_sql(deleted_keys, latest_operations)
 
     def check_dependency(self, operation, dependency):
         if isinstance(dependency[1], SQLBlob):
