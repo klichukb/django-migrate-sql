@@ -7,10 +7,14 @@ from migrate_sql.graph import SqlStateGraph
 class SQLBlob(object):
     pass
 
+# Dummy object used to identify django dependency as the one used by this tool only.
 SQL_BLOB = SQLBlob()
 
 
 def _sql_params(sql):
+    """Identify `sql` as either SQL string or 2-tuple of SQL and params.
+    Same format as supported by Django's RunSQL operation for sql/reverse_sql.
+    """
     params = None
     if isinstance(sql, (list, tuple)):
         elements = len(sql)
@@ -22,6 +26,14 @@ def _sql_params(sql):
 
 
 def is_sql_equal(sqls1, sqls2):
+    """Find out equality of two SQL items.
+
+    See https://docs.djangoproject.com/en/1.8/ref/migration-operations/#runsql.
+    Args:
+        sqls1, sqls2: SQL items, have the same format as supported by Django's RunSQL operation.
+    Returns:
+        (bool) `True` if equal, otherwise `False`.
+    """
     is_seq1 = isinstance(sqls1, (list, tuple))
     is_seq2 = isinstance(sqls2, (list, tuple))
 
@@ -42,6 +54,8 @@ def is_sql_equal(sqls1, sqls2):
 
 
 class MigrationAutodetector(DjangoMigrationAutodetector):
+    """Substitutes Django's MigrationAutodetector class, injecting SQL migrations logic.
+    """
     def __init__(self, from_state, to_state, questioner=None, to_sql_graph=None):
         super(MigrationAutodetector, self).__init__(from_state, to_state, questioner)
         self.to_sql_graph = to_sql_graph
@@ -120,7 +134,6 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             # made. Sides can be both strings and lists of 2-tuples,
             # natively supported by Django's RunSQL:
             #
-            # https://docs.djangoproject.com/en/1.8/ref/migration-operations/#runsql
             if is_sql_equal(self.from_sql_graph.nodes[key].sql, self.to_sql_graph.nodes[key].sql):
                 continue
             changed_keys.add(key)

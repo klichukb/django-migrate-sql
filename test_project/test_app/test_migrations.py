@@ -81,9 +81,13 @@ class BaseMigrateSQLTestCase(TestCase):
     def check_migrations_content(self, expected):
         loader = MigrationLoader(None, load=True)
         available = loader.disk_migrations.keys()
-        for expc_mig, (dependencies, operations) in expected.items():
+        for expc_mig, (check_exists, dependencies, operations) in expected.items():
             key = next((mig for mig in available if mig_name(mig) == mig_name(expc_mig)), None)
-            self.assertIsNotNone(key, 'Expected migration {} not found.'.format(expc_mig))
+            if check_exists:
+                self.assertIsNotNone(key, 'Expected migration {} not found.'.format(expc_mig))
+            else:
+                self.assertIsNone(key, 'Unexpected migration {} was found.'.format(expc_mig))
+                continue
             migration = loader.disk_migrations[key]
             self.assertEqual([mig_name(dep) for dep in migration.dependencies], dependencies)
             self.assertEqual([(op.__class__.__name__, op.name) for op in migration.operations],
@@ -196,6 +200,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
         expected_content = {
             ('test_app', '0002'): (
+                True,
                 [('test_app', '0001')],
                 [('CreateSQL', 'top_books')],
             ),
@@ -211,6 +216,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
         expected_content = {
             ('test_app', '0003'): (
+                True,
                 [('test_app', '0002')],
                 [('ReverseAlterSQL', 'top_books'), ('AlterSQL', 'top_books')],
             ),
@@ -227,6 +233,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
         expected_content = {
             ('test_app', '0003'): (
+                True,
                 [('test_app', '0002')],
                 [('DeleteSQL', 'top_books')],
             ),
@@ -242,6 +249,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
         expected_content = {
             ('test_app', '0004'): (
+                True,
                 [('test_app', '0003')],
                 [('CreateSQL', 'top_books')],
             ),
@@ -331,10 +339,12 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         self.config2.custom_sql = [item('sale', 1)]
         expected_content = {
             ('test_app2', '0001'): (
+                True,
                 [],
                 [('CreateSQL', 'sale')],
             ),
             ('test_app', '0002'): (
+                True,
                 [('test_app2', '0001'), ('test_app', '0001')],
                 [('CreateSQL', 'book'), ('CreateSQL', 'rating'),
                  ('CreateSQL', 'narration')],
@@ -359,15 +369,18 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
 
         expected_content = {
             ('test_app', '0003'): (
+                True,
                 [('test_app', '0002')],
                 [('ReverseAlterSQL', 'narration'), ('CreateSQL', 'edition'),
                  ('ReverseAlterSQL', 'book')],
             ),
             ('test_app2', '0002'): (
+                True,
                 [('test_app', '0003'), ('test_app2', '0001')],
                 [('ReverseAlterSQL', 'sale'), ('AlterSQL', 'sale')],
             ),
             ('test_app', '0004'): (
+                True,
                 [('test_app2', '0002'), ('test_app', '0003')],
                 [('AlterSQL', 'book'), ('CreateSQL', 'author'),
                  ('AlterSQL', 'narration'), ('CreateSQL', 'product')],
@@ -383,6 +396,24 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             module='test_app.migrations_deps_update', module2='test_app2.migrations_deps_update',
         )
 
+    def test_deps_no_changes(self):
+        self.config.custom_sql = [
+            item('rating', 1),
+            item('book', 1),
+            item('narration', 1, [('test_app2', 'sale'), ('test_app', 'book')]),
+        ]
+        self.config2.custom_sql = [item('sale', 1)]
+
+        expected_content = {
+            ('test_app', '0003'): (False, [], []),
+            ('test_app2', '0002'): (False, [], []),
+        }
+        migrations = ()
+        self.check_migrations(
+            expected_content, migrations,
+            module='test_app.migrations_deps_update', module2='test_app2.migrations_deps_update',
+        )
+
     def test_deps_delete(self):
         self.config.custom_sql = [
             item('rating', 1),
@@ -392,11 +423,13 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
 
         expected_content = {
             ('test_app', '0005'): (
+                True,
                 [('test_app', '0004')],
                 [('DeleteSQL', 'narration'), ('DeleteSQL', 'product'),
                  ('DeleteSQL', 'author'), ('DeleteSQL', 'book')],
             ),
             ('test_app2', '0003'): (
+                True,
                 [('test_app', '0005'), ('test_app2', '0002')],
                 [('DeleteSQL', 'sale')],
             ),
