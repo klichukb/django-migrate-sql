@@ -43,16 +43,41 @@ def module_dir(module):
     raise ValueError("Cannot determine directory containing %s" % module)
 
 
+def item(name, version, dependencies=None):
+    dependencies = dependencies or ()
+    args = ', '.join(['{name}{ver} {name}'.format(name=dep[1], ver=version)
+                      for dep in dependencies] + ['arg{i} int'.format(i=i + 1)
+                                                  for i in range(version)])
+    sql, reverse_sql = ('CREATE TYPE {name} AS ({args}); -- {ver}'.format(
+        name=name, args=args, ver=version),
+                        'DROP TYPE {}'.format(name))
+    return SqlItem(name, sql, reverse_sql, dependencies=dependencies)
+
+
 class BaseMigrateSQLTestCase(TestCase):
     def setUp(self):
+        super(BaseMigrateSQLTestCase, self).setUp()
         self.config = apps.get_app_config('test_app')
         self.config2 = apps.get_app_config('test_app2')
+        self.out = StringIO()
 
     def tearDown(self):
+        super(BaseMigrateSQLTestCase, self).tearDown()
         if hasattr(self.config, 'custom_sql'):
             del self.config.custom_sql
         if hasattr(self.config2, 'custom_sql'):
             del self.config2.custom_sql
+
+    def check_migrations_content(self, expected):
+        loader = MigrationLoader(None, load=True)
+        available = loader.disk_migrations.keys()
+        for expc_mig, (dependencies, operations) in expected.items():
+            key = next((mig for mig in available if mig_name(mig) == mig_name(expc_mig)), None)
+            self.assertIsNotNone(key, 'Expected migration {} not found.'.format(expc_mig))
+            migration = loader.disk_migrations[key]
+            self.assertEqual([mig_name(dep) for dep in migration.dependencies], dependencies)
+            self.assertEqual([(op.__class__.__name__, op.name) for op in migration.operations],
+                             operations)
 
     @contextmanager
     def temporary_migration_module(self, app_label='test_app', module=None):
@@ -86,13 +111,12 @@ class BaseMigrateSQLTestCase(TestCase):
                 new_setting[app_label] = new_module
                 with self.settings(MIGRATION_MODULES=new_setting):
                     yield target_migrations_dir
-
         finally:
             shutil.rmtree(temp_dir)
 
 
 class MigrateSQLTestCase(BaseMigrateSQLTestCase):
-    top_books_sql_v1 = (
+    SQL_V1 = (
         # sql
         [("""
             CREATE OR REPLACE FUNCTION top_books()
@@ -109,7 +133,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         'DROP FUNCTION top_books()',
     )
 
-    top_books_sql_v2 = (
+    SQL_V2 = (
         # sql
         [("""
             CREATE OR REPLACE FUNCTION top_books(min_rating int = %s)
@@ -144,72 +168,84 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         cursor.execute(sql, params=params)
         return cursor.fetchall()
 
-    def test_migration_add(self):
-        sql, reverse_sql = self.top_books_sql_v1
-        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
-        cmd_output = StringIO()
-        with self.temporary_migration_module():
-            call_command('makemigrations', 'test_app', stdout=cmd_output)
-            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
-            expected_log = '- Create SQL "top_books"'
-            self.assertIn(expected_log, lines)
+    def check_run_migrations(self, migrations):
+        for migration, expected in migrations:
+            call_command('migrate', 'test_app', migration, stdout=self.out)
+            if expected:
+                result = self.run_query('SELECT name FROM top_books()')
+                self.assertEqual(result, expected)
+            else:
+                result = self.run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
+                self.assertEqual(result, [(0,)])
 
-            call_command('migrate', 'test_app', stdout=cmd_output)
-            result = self.run_query('SELECT name FROM top_books()')
-            self.assertEqual(result, [('HTML 5',), ('Management',), ('The mysterious dog',)])
+    def check_migrations(self, content, results, migration_module=None, app_label='test_app'):
+        with self.temporary_migration_module(module=migration_module):
+            call_command('makemigrations', app_label, stdout=self.out)
+            self.check_migrations_content(content)
+
+            call_command('migrate', app_label, stdout=self.out)
+            self.check_run_migrations(results)
+
+    def test_migration_add(self):
+        sql, reverse_sql = self.SQL_V1
+        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+        expected_content = {
+            ('test_app', '0002'): (
+                [('test_app', '0001')],
+                [('CreateSQL', 'top_books')],
+            ),
+        }
+        expected_results = (
+            ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
+        )
+        self.check_migrations(expected_content, expected_results)
 
     def test_migration_change(self):
-        progress_expected = (
+        sql, reverse_sql = self.SQL_V2
+        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+
+        expected_content = {
+            ('test_app', '0003'): (
+                [('test_app', '0002')],
+                [('ReverseAlterSQL', 'top_books'), ('AlterSQL', 'top_books')],
+            ),
+        }
+        expected_results = (
             ('0003', [('HTML 5',), ('The mysterious dog',)]),
             ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
             ('0001', None),
         )
-        sql, reverse_sql = self.top_books_sql_v2
-        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
-
-        cmd_output = StringIO()
-        with self.temporary_migration_module(module='test_app.migrations_v1'):
-            call_command('makemigrations', 'test_app', stdout=cmd_output)
-            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
-            self.assertIn('- Reverse alter SQL "top_books"', lines)
-            self.assertIn('- Alter SQL "top_books"', lines)
-
-            for migration, expected in progress_expected:
-                call_command('migrate', 'test_app', migration, stdout=cmd_output)
-                if expected:
-                    result = self.run_query('SELECT name FROM top_books()')
-                    self.assertEqual(result, expected)
-                else:
-                    result = self.run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
-                    self.assertEqual(result, [(0,)])
+        self.check_migrations(expected_content, expected_results, 'test_app.migrations_v1')
 
     def test_migration_delete(self):
-        progress_expected = (
+        self.config.custom_sql = []
+
+        expected_content = {
+            ('test_app', '0003'): (
+                [('test_app', '0002')],
+                [('DeleteSQL', 'top_books')],
+            ),
+        }
+        expected_results = (
+            ('0003', None),
+        )
+        self.check_migrations(expected_content, expected_results, 'test_app.migrations_v1')
+
+    def test_migration_recreate(self):
+        sql, reverse_sql = self.SQL_V2
+        self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
+
+        expected_content = {
+            ('test_app', '0004'): (
+                [('test_app', '0003')],
+                [('CreateSQL', 'top_books')],
+            ),
+        }
+        expected_results = (
             ('0003', None),
             ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
         )
-
-        cmd_output = StringIO()
-        with self.temporary_migration_module(module='test_app.migrations_v1'):
-            self.config.custom_sql = []
-            call_command('makemigrations', 'test_app', stdout=cmd_output)
-            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
-            self.assertIn('- Delete SQL "top_books"', lines)
-
-            sql, reverse_sql = self.top_books_sql_v2
-            self.config.custom_sql = [SqlItem('top_books', sql, reverse_sql)]
-            call_command('makemigrations', 'test_app', stdout=cmd_output)
-            lines = [ln.strip() for ln in cmd_output.getvalue().splitlines()]
-            self.assertIn('- Create SQL "top_books"', lines)
-
-            for migration, expected in progress_expected:
-                call_command('migrate', 'test_app', migration, stdout=cmd_output)
-                if expected:
-                    result = self.run_query('SELECT name FROM top_books()')
-                    self.assertEqual(result, expected)
-                else:
-                    result = self.run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
-                    self.assertEqual(result, [(0,)])
+        self.check_migrations(expected_content, expected_results, 'test_app.migrations_recreate')
 
 
 def mig_name(name):
@@ -249,16 +285,6 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         ],
     }
 
-    def item(self, name, version, dependencies=None):
-        dependencies = dependencies or ()
-        args = ', '.join(['{name}{ver} {name}'.format(name=dep[1], ver=version)
-                          for dep in dependencies] + ['arg{i} int'.format(i=i + 1)
-                                                      for i in range(version)])
-        sql, reverse_sql = ('CREATE TYPE {name} AS ({args}); -- {ver}'.format(
-            name=name, args=args, ver=version),
-                            'DROP TYPE {}'.format(name))
-        return SqlItem(name, sql, reverse_sql, dependencies=dependencies)
-
     def check_type(self, repr_sql, fetch_type, known_types, expect):
         cursor = connection.cursor()
         for _type in known_types:
@@ -269,25 +295,14 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         result = cursor.fetchone()[0]
         self.assertEqual(result, expect)
 
-    def check_migrations(self, expected):
-        loader = MigrationLoader(None, load=True)
-        available = loader.disk_migrations.keys()
-        for expc_mig, (dependencies, operations) in expected.items():
-            key = next((mig for mig in available if mig_name(mig) == mig_name(expc_mig)), None)
-            self.assertIsNotNone(key, 'Expected migration {} not found.'.format(expc_mig))
-            migration = loader.disk_migrations[key]
-            self.assertEqual([mig_name(dep) for dep in migration.dependencies], dependencies)
-            self.assertEqual([(op.__class__.__name__, op.name) for op in migration.operations],
-                             operations)
-
     def test_deps_create(self):
         self.config.custom_sql = [
-            self.item('rating', 1),
-            self.item('book', 1),
-            self.item('narration', 1, [('test_app2', 'sale'), ('test_app', 'book')]),
+            item('rating', 1),
+            item('book', 1),
+            item('narration', 1, [('test_app2', 'sale'), ('test_app', 'book')]),
         ]
-        self.config2.custom_sql = [self.item('sale', 1)]
-        expected = {
+        self.config2.custom_sql = [item('sale', 1)]
+        expected_content = {
             ('test_app2', '0001'): (
                 [],
                 [('CreateSQL', 'sale')],
@@ -295,34 +310,28 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0002'): (
                 [('test_app2', '0001'), ('test_app', '0001')],
                 [('CreateSQL', 'book'), ('CreateSQL', 'rating'),
-                 ('CreateSQL', 'narration')]
+                 ('CreateSQL', 'narration')],
             ),
         }
-
         with nested(self.temporary_migration_module(app_label='test_app'),
                     self.temporary_migration_module(app_label='test_app2')):
 
-            call_command('makemigrations', 'test_app')
-            self.check_migrations(expected)
+            call_command('makemigrations', 'test_app', stdout=self.out)
+            self.check_migrations_content(expected_content)
 
     def test_deps_update(self):
-        migrations = (
-            ('test_app', '0004'),
-            ('test_app', '0002'),
-            ('test_app', '0004'),
-        )
         self.config.custom_sql = [
-            self.item('rating', 1),
-            self.item('edition', 1),
-            self.item('author', 1, [('test_app', 'book')]),
-            self.item('narration', 1,  [('test_app2', 'sale'), ('test_app', 'book')]),
-            self.item('book', 2, [('test_app2', 'sale'), ('test_app', 'rating')]),
-            self.item('product', 1, [('test_app', 'book'), ('test_app', 'author'),
-                                     ('test_app', 'edition')]),
+            item('rating', 1),
+            item('edition', 1),
+            item('author', 1, [('test_app', 'book')]),
+            item('narration', 1,  [('test_app2', 'sale'), ('test_app', 'book')]),
+            item('book', 2, [('test_app2', 'sale'), ('test_app', 'rating')]),
+            item('product', 1,
+                 [('test_app', 'book'), ('test_app', 'author'), ('test_app', 'edition')]),
         ]
-        self.config2.custom_sql = [self.item('sale', 2)]
+        self.config2.custom_sql = [item('sale', 2)]
 
-        expected = {
+        expected_content = {
             ('test_app', '0003'): (
                 [('test_app', '0002')],
                 [('ReverseAlterSQL', 'narration'), ('CreateSQL', 'edition'),
@@ -338,16 +347,20 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
                  ('AlterSQL', 'narration'), ('CreateSQL', 'product')],
             ),
         }
-
+        migrations = (
+            ('test_app', '0004'),
+            ('test_app', '0002'),
+            ('test_app', '0004'),
+        )
         with nested(self.temporary_migration_module(app_label='test_app',
                                                     module='test_app.migrations_deps_update'),
                     self.temporary_migration_module(app_label='test_app2',
                                                     module='test_app2.migrations_deps_update')):
-            call_command('makemigrations', 'test_app')
-            self.check_migrations(expected)
+            call_command('makemigrations', 'test_app', stdout=self.out)
+            self.check_migrations_content(expected_content)
 
             for migration in migrations:
-                call_command('migrate', 'test_app', migration)
+                call_command('migrate', 'test_app', migration, stdout=self.out)
                 check_cases = self.RESULT_EXPECTED[migration]
                 for check_case in check_cases:
                     self.check_type(*check_case)

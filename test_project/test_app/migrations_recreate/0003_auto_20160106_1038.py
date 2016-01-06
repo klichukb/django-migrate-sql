@@ -1,0 +1,20 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
+from django.db import models, migrations
+import migrate_sql.operations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('test_app', '0002_auto_20151224_1827'),
+    ]
+
+    operations = [
+        migrate_sql.operations.DeleteSQL(
+            name=b'top_books',
+            sql=b'DROP FUNCTION top_books()',
+            reverse_sql=[(b'\n            CREATE OR REPLACE FUNCTION top_books()\n                RETURNS SETOF test_app_book AS $$\n            BEGIN\n                RETURN QUERY\n                    SELECT * FROM test_app_book ab\n                    WHERE ab.rating > %s\n                    ORDER BY ab.rating DESC;\n            END;\n            $$ LANGUAGE plpgsql;\n          ', [5])],
+        ),
+    ]
