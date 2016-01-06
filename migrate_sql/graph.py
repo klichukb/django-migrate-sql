@@ -27,6 +27,14 @@ class SqlStateGraph(object):
     def add_lazy_dependency(self, app_label, child, parent):
         self.dependencies.append((app_label, child, parent))
 
+    def remove_lazy_dependencies(self, app_label, child):
+        remove_deps = []
+        for dep in self.dependencies:
+            if dep[0] == app_label and dep[1] == child:
+                remove_deps.append(dep)
+        for dep in remove_deps:
+            self.dependencies.remove(dep)
+
     def resolve_dependencies(self):
         for app_label, child, parent in self.dependencies:
             if child not in self.nodes:

@@ -61,3 +61,4 @@ class DeleteSQL(BaseAlterSQL):
         custom_sql = self.get_sql_state(state)
 
         custom_sql.remove_node((app_label, self.name))
+        custom_sql.remove_lazy_dependencies(app_label, (app_label, self.name))

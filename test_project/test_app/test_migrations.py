@@ -58,6 +58,12 @@ def mig_name(name):
     return name[0], name[1][:4]
 
 
+def run_query(sql, params=None):
+    cursor = connection.cursor()
+    cursor.execute(sql, params=params)
+    return cursor.fetchall()
+
+
 class BaseMigrateSQLTestCase(TestCase):
     def setUp(self):
         super(BaseMigrateSQLTestCase, self).setUp()
@@ -167,19 +173,14 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         )
         Book.objects.bulk_create(books)
 
-    def run_query(self, sql, params=None):
-        cursor = connection.cursor()
-        cursor.execute(sql, params=params)
-        return cursor.fetchall()
-
     def check_run_migrations(self, migrations):
         for migration, expected in migrations:
             call_command('migrate', 'test_app', migration, stdout=self.out)
             if expected:
-                result = self.run_query('SELECT name FROM top_books()')
+                result = run_query('SELECT name FROM top_books()')
                 self.assertEqual(result, expected)
             else:
-                result = self.run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
+                result = run_query("SELECT COUNT(*) FROM pg_proc WHERE proname = 'top_books'")
                 self.assertEqual(result, [(0,)])
 
     def check_migrations(self, content, results, migration_module=None, app_label='test_app'):
@@ -276,35 +277,49 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
              'narration',
              ['rating', 'book', 'sale', 'narration'],
              ((1,), (2,), 3)),
+        ],
+        ('test_app', '0005'): [
 
             # narration check
-            ("('(1)', '(2)', 3)",
-             'narration',
-             ['rating', 'book', 'sale', 'narration'],
-             ((1,), (2,), 3)),
+            ("(1)", 'edition', ['edition'], (1,)),
+
+            # product check
+            (None, 'product', [], None),
+        ],
+        ('test_app2', '0003'): [
+            # sale check
+            (None, 'sale', [], None),
         ],
     }
 
     def check_type(self, repr_sql, fetch_type, known_types, expect):
         cursor = connection.cursor()
-        for _type in known_types:
-            register_composite(str(_type), cursor.cursor, factory=TupleComposite)
+        if repr_sql:
+            for _type in known_types:
+                register_composite(str(_type), cursor.cursor, factory=TupleComposite)
 
-        sql = 'SELECT ROW{repr_sql}::{ftype}'.format(repr_sql=repr_sql, ftype=fetch_type)
-        cursor.execute(sql)
-        result = cursor.fetchone()[0]
-        self.assertEqual(result, expect)
+            sql = 'SELECT ROW{repr_sql}::{ftype}'.format(repr_sql=repr_sql, ftype=fetch_type)
+            cursor.execute(sql)
+            result = cursor.fetchone()[0]
+            self.assertEqual(result, expect)
+        else:
+            result = run_query("SELECT COUNT(*) FROM pg_type WHERE typname = %s",
+                               [fetch_type])
+            self.assertEqual(result, [(0,)])
 
     def check_migrations(self, content, migrations,
-                         module=None, module2=None, app_label='test_app'):
+                         module=None, module2=None, migrate_apps=None):
+        if migrate_apps is None:
+            migrate_apps = ('test_app',)
         with nested(self.temporary_migration_module(app_label='test_app', module=module),
                     self.temporary_migration_module(app_label='test_app2', module=module2)):
-            call_command('makemigrations', app_label, stdout=self.out)
+            for app in migrate_apps:
+                call_command('makemigrations', app, stdout=self.out)
             self.check_migrations_content(content)
 
-            for migration in migrations:
+            for app_label, migration in migrations:
                 call_command('migrate', app_label, migration, stdout=self.out)
-                check_cases = self.RESULTS_EXPECTED[migration]
+                check_cases = self.RESULTS_EXPECTED[(app_label, migration)]
                 for check_case in check_cases:
                     self.check_type(*check_case)
 
@@ -367,4 +382,35 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(
             expected_content, migrations,
             module='test_app.migrations_deps_update', module2='test_app2.migrations_deps_update',
+        )
+
+    def test_deps_delete(self):
+        self.config.custom_sql = [
+            item('rating', 1),
+            item('edition', 1),
+        ]
+        self.config2.custom_sql = []
+
+        expected_content = {
+            ('test_app', '0005'): (
+                [('test_app', '0004')],
+                [('DeleteSQL', 'narration'), ('DeleteSQL', 'product'),
+                 ('DeleteSQL', 'author'), ('DeleteSQL', 'book')],
+            ),
+            ('test_app2', '0003'): (
+                [('test_app2', '0002')],
+                [('DeleteSQL', 'sale')],
+            ),
+        }
+        migrations = (
+            ('test_app', '0005'),
+            ('test_app', '0002'),
+            ('test_app', '0004'),
+            ('test_app', '0005'),
+            ('test_app2', '0003'),
+        )
+        self.check_migrations(
+            expected_content, migrations,
+            migrate_apps=('test_app', 'test_app2'),
+            module='test_app.migrations_deps_delete', module2='test_app2.migrations_deps_delete',
         )
