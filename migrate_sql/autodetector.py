@@ -10,6 +10,37 @@ class SQLBlob(object):
 SQL_BLOB = SQLBlob()
 
 
+def _sql_params(sql):
+    params = None
+    if isinstance(sql, (list, tuple)):
+        elements = len(sql)
+        if elements == 2:
+            sql, params = sql
+        else:
+            raise ValueError("Expected a 2-tuple but got %d" % elements)
+    return sql, params
+
+
+def is_sql_equal(sqls1, sqls2):
+    is_seq1 = isinstance(sqls1, (list, tuple))
+    is_seq2 = isinstance(sqls2, (list, tuple))
+
+    if not is_seq1:
+        sqls1 = (sqls1,)
+    if not is_seq2:
+        sqls2 = (sqls2,)
+
+    if len(sqls1) != len(sqls2):
+        return False
+
+    for sql1, sql2 in zip(sqls1, sqls2):
+        sql1, params1 = _sql_params(sql1)
+        sql2, params2 = _sql_params(sql2)
+        if sql1 != sql2 or params1 != params2:
+            return False
+    return True
+
+
 class MigrationAutodetector(DjangoMigrationAutodetector):
     def __init__(self, from_state, to_state, questioner=None, to_sql_graph=None):
         super(MigrationAutodetector, self).__init__(from_state, to_state, questioner)
@@ -48,10 +79,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             # natively supported by Django's RunSQL:
             #
             # https://docs.djangoproject.com/en/1.8/ref/migration-operations/#runsql
-            #
-            # NOTE: if iterables inside a list provide params, they should strictly be
-            # tuples, not list, in order comparison to work.
-            if self.from_sql_graph.nodes[key].sql == self.to_sql_graph.nodes[key].sql:
+            if is_sql_equal(self.from_sql_graph.nodes[key].sql, self.to_sql_graph.nodes[key].sql):
                 continue
             changed_keys.add(key)
 
