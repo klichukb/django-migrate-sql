@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 
 from django.db.migrations.graph import Node, NodeNotFoundError
 from django.apps import apps
@@ -13,7 +13,7 @@ class SQLStateGraph(object):
     def __init__(self):
         self.nodes = {}
         self.node_map = {}
-        self.dependencies = []
+        self.dependencies = defaultdict(set)
 
     def remove_node(self, key):
         # XXX: Workaround for Issue #2
@@ -27,40 +27,43 @@ class SQLStateGraph(object):
         self.node_map[key] = node
         self.nodes[key] = sql_item
 
-    def add_lazy_dependency(self, app_label, child, parent):
+    def add_lazy_dependency(self, child, parent):
         """
         Add dependency to be resolved and applied later.
         """
-        self.dependencies.append((app_label, child, parent))
+        self.dependencies[child].add(parent)
 
-    def remove_lazy_dependencies(self, app_label, child):
+    def remove_lazy_dependency(self, child, parent):
+        """
+        Add dependency to be resolved and applied later.
+        """
+        self.dependencies[child].remove(parent)
+
+    def remove_lazy_for_child(self, child):
         """
         Remove dependency to be resolved and applied later.
         """
-        remove_deps = []
-        for dep in self.dependencies:
-            if dep[0] == app_label and dep[1] == child:
-                remove_deps.append(dep)
-        for dep in remove_deps:
-            self.dependencies.remove(dep)
+        if child in self.dependencies:
+            del self.dependencies[child]
 
     def build_graph(self):
         """
         Read lazy dependency list and build graph.
         """
-        for app_label, child, parent in self.dependencies:
+        for child, parents in self.dependencies.items():
             if child not in self.nodes:
                 raise NodeNotFoundError(
-                    "App %s dependencies reference nonexistent child node %r" % (app_label, child),
+                    "App %s dependencies reference nonexistent child node %r" % (parent[0], child),
                     child
                 )
-            if parent not in self.nodes:
-                raise NodeNotFoundError(
-                    "App %s dependencies reference nonexistent parent node %r" % (app_label, parent),
-                    parent
-                )
-            self.node_map[child].add_parent(self.node_map[parent])
-            self.node_map[parent].add_child(self.node_map[child])
+            for parent in parents:
+                if parent not in self.nodes:
+                    raise NodeNotFoundError(
+                        "App %s dependencies reference nonexistent parent node %r" % (child[0], parent),
+                        parent
+                    )
+                self.node_map[child].add_parent(self.node_map[parent])
+                self.node_map[parent].add_child(self.node_map[child])
 
 
 def build_current_graph():
@@ -81,7 +84,6 @@ def build_current_graph():
                 SQLItemNode(sql_item.sql, sql_item.reverse_sql),
             )
             for dep in sql_item.dependencies:
-                graph.add_lazy_dependency(
-                    config.label, (config.label, sql_item.name), dep)
+                graph.add_lazy_dependency((config.label, sql_item.name), dep)
     graph.build_graph()
     return graph
