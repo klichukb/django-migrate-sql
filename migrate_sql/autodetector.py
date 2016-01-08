@@ -1,7 +1,6 @@
 from django.db.migrations.autodetector import MigrationAutodetector as DjangoMigrationAutodetector
 
-from migrate_sql.operations import (AlterSQL, ReverseAlterSQL, CreateSQL, DeleteSQL,
-                                    AlterSQLDependencies)
+from migrate_sql.operations import (AlterSQL, ReverseAlterSQL, CreateSQL, DeleteSQL, AlterSQLState)
 from migrate_sql.graph import SQLStateGraph
 
 
@@ -127,7 +126,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
 
             # migrate backwards
             operation = ReverseAlterSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql)
-            sql_deps = self.from_sql_graph.node_map[key].children
+            sql_deps = {n.key for n in self.from_sql_graph.node_map[key].children}
             sql_deps.add(key)
             self.add_sql_operation(app_label, sql_name, operation, sql_deps)
 
@@ -138,7 +137,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
         for key in reversed(keys):
             app_label, sql_name = key
             new_node = self.to_sql_graph.nodes[key]
-            sql_deps = self.to_sql_graph.node_map[key].parents
+            sql_deps = {n.key for n in self.to_sql_graph.node_map[key].parents}
 
             if key in changed_keys:
                 operation_cls = AlterSQL
@@ -158,8 +157,10 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
         """
         for key, removed_deps, added_deps in dep_changed_keys:
             app_label, sql_name = key
-            operation = AlterSQLDependencies(sql_name, add=added_deps, remove=removed_deps)
-            self.add_operation(app_label, operation)
+            operation = AlterSQLState(sql_name, add_dependencies=added_deps,
+                                      remove_dependencies=removed_deps)
+            sql_deps = {key}
+            self.add_sql_operation(app_label, sql_name, operation, sql_deps)
 
     def _generate_delete_sql(self, delete_keys):
         """
@@ -169,7 +170,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             app_label, sql_name = key
             old_node = self.from_sql_graph.nodes[key]
             operation = DeleteSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql)
-            sql_deps = self.from_sql_graph.node_map[key].children
+            sql_deps = {n.key for n in self.from_sql_graph.node_map[key].children}
             sql_deps.add(key)
             self.add_sql_operation(app_label, sql_name, operation, sql_deps)
 

@@ -53,7 +53,7 @@ class SQLStateGraph(object):
         for child, parents in self.dependencies.items():
             if child not in self.nodes:
                 raise NodeNotFoundError(
-                    "App %s dependencies reference nonexistent child node %r" % (parent[0], child),
+                    "App %s dependencies reference nonexistent child node %r" % (child[0], child),
                     child
                 )
             for parent in parents:

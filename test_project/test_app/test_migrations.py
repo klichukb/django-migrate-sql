@@ -383,7 +383,7 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
                 True,
                 [('test_app2', '0002'), ('test_app', '0003')],
                 [('AlterSQL', 'book'), ('CreateSQL', 'author'),
-                 ('AlterSQL', 'narration'), ('CreateSQL', 'product')],
+                 ('AlterSQL', 'narration'), ('AlterSQLState', u'book'), ('CreateSQL', 'product')],
             ),
         }
         migrations = (
