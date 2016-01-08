@@ -3,7 +3,7 @@ from collections import namedtuple, defaultdict
 from django.db.migrations.graph import Node, NodeNotFoundError
 from django.apps import apps
 
-SQLItemNode = namedtuple('SQLItemNode', ('sql', 'reverse_sql'))
+# SQLItemNode = namedtuple('SQLItemNode', ('sql', 'reverse_sql'))
 
 
 class SQLStateGraph(object):
@@ -79,10 +79,8 @@ def build_current_graph():
             continue
 
         for sql_item in config.custom_sql:
-            graph.add_node(
-                (config.label, sql_item.name),
-                SQLItemNode(sql_item.sql, sql_item.reverse_sql),
-            )
+            graph.add_node((config.label, sql_item.name), sql_item)
+
             for dep in sql_item.dependencies:
                 graph.add_lazy_dependency((config.label, sql_item.name), dep)
     graph.build_graph()
