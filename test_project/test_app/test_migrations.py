@@ -136,10 +136,8 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             CREATE OR REPLACE FUNCTION top_books()
                 RETURNS SETOF test_app_book AS $$
             BEGIN
-                RETURN QUERY
-                    SELECT * FROM test_app_book ab
-                    WHERE ab.rating > %s
-                    ORDER BY ab.rating DESC;
+                RETURN QUERY SELECT * FROM test_app_book ab WHERE ab.rating > %s
+                ORDER BY ab.rating DESC;
             END;
             $$ LANGUAGE plpgsql;
           """, [5])],
@@ -153,10 +151,8 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             CREATE OR REPLACE FUNCTION top_books(min_rating int = %s)
                 RETURNS SETOF test_app_book AS $$
             BEGIN
-                RETURN QUERY EXECUTE
-                   'SELECT * FROM test_app_book ab
-                    WHERE ab.rating > $1
-                    AND ab.published
+                RETURN QUERY EXECUTE 'SELECT * FROM test_app_book ab
+                    WHERE ab.rating > $1 AND ab.published
                     ORDER BY ab.rating DESC'
                 USING min_rating;
             END;
@@ -164,6 +160,25 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
           """, [5])],
         # reverse sql
         'DROP FUNCTION top_books(int)',
+    )
+
+    SQL_V3 = (
+        # sql
+        [("""
+            CREATE OR REPLACE FUNCTION top_books()
+                RETURNS SETOF test_app_book AS $$
+            DECLARE
+                min_rating int := %s;
+            BEGIN
+                RETURN QUERY EXECUTE 'SELECT * FROM test_app_book ab
+                    WHERE ab.rating > $1 AND ab.published
+                    ORDER BY ab.rating DESC'
+                USING min_rating;
+            END;
+            $$ LANGUAGE plpgsql;
+          """, [5])],
+        # reverse sql
+        'DROP FUNCTION top_books()',
     )
 
     def setUp(self):
@@ -225,6 +240,25 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             ('0003', [('HTML 5',), ('The mysterious dog',)]),
             ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
             ('0001', None),
+        )
+        self.check_migrations(expected_content, expected_results, 'test_app.migrations_change')
+
+    def test_migration_replace(self):
+        sql, reverse_sql = self.SQL_V3
+        self.config.sql_items = [SQLItem('top_books', sql, reverse_sql, replace=True)]
+
+        expected_content = {
+            ('test_app', '0003'): (
+                True,
+                [('test_app', '0002')],
+                [('AlterSQL', 'top_books')],
+            ),
+        }
+        expected_results = (
+            ('0003', [('HTML 5',), ('The mysterious dog',)]),
+            ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
+            ('0001', None),
+            ('0002', [('HTML 5',), ('Management',), ('The mysterious dog',)]),
         )
         self.check_migrations(expected_content, expected_results, 'test_app.migrations_change')
 

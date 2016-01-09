@@ -1,4 +1,5 @@
 from django.db.migrations.autodetector import MigrationAutodetector as DjangoMigrationAutodetector
+from django.db.migrations.operations import RunSQL
 
 from migrate_sql.operations import (AlterSQL, ReverseAlterSQL, CreateSQL, DeleteSQL, AlterSQLState)
 from migrate_sql.graph import SQLStateGraph
@@ -66,10 +67,10 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
         self.from_sql_graph.build_graph()
         self._sql_operations = []
 
-    def sort_sql_changes(self, keys, resolve_keys, node_map):
+    def sort_sql_changes(self, keys, resolve_keys, sql_state):
         """
         Accepts keys of SQL items available and sort them, adding additional dependencies.
-        Uses graph of `node_map` nodes to build `keys` and `resolve_keys` into sequence that
+        Uses graph of `sql_state` nodes to build `keys` and `resolve_keys` into sequence that
         starts with leaves (items that have not dependents) and ends with roots.
 
         Changes `resolve_keys` argument as dependencies are added to the result.
@@ -79,20 +80,21 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                 dont require respective reverse operations.
             resolve_keys (list): List of migration keys, that are changing existing items,
                 and may require respective reverse operations.
-            node_map (dict): See `graph.SQLStateGraph.node_map`.
+            sql_sate (graph.SQLStateGraph): State of SQL items.
         Returns:
             (list) Sorted sequence of migration keys, enriched with dependencies.
         """
         result_keys = []
         all_keys = keys | resolve_keys
         for key in all_keys:
-            node = node_map[key]
+            node = sql_state.node_map[key]
+            sql_item = sql_state.nodes[key]
             ancs = node.ancestors()[:-1]
             ancs.reverse()
             pos = next((i for i, k in enumerate(result_keys) if k in ancs), len(result_keys))
             result_keys.insert(pos, key)
 
-            if key in resolve_keys:
+            if key in resolve_keys and not sql_item.replace:
                 # ancestors() and descendants() include key itself, need to cut it out.
                 descs = reversed(node.descendants()[:-1])
                 for desc in descs:
@@ -120,12 +122,13 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             if key not in changed_keys:
                 continue
             app_label, sql_name = key
-            old_node = self.from_sql_graph.nodes[key]
-            if not old_node.reverse_sql:
+            old_item = self.from_sql_graph.nodes[key]
+            new_item = self.to_sql_graph.nodes[key]
+            if not old_item.reverse_sql or old_item.reverse_sql == RunSQL.noop or new_item.replace:
                 continue
 
             # migrate backwards
-            operation = ReverseAlterSQL(sql_name, old_node.reverse_sql, reverse_sql=old_node.sql)
+            operation = ReverseAlterSQL(sql_name, old_item.reverse_sql, reverse_sql=old_item.sql)
             sql_deps = [n.key for n in self.from_sql_graph.node_map[key].children]
             sql_deps.append(key)
             self.add_sql_operation(app_label, sql_name, operation, sql_deps)
@@ -136,18 +139,23 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
         """
         for key in reversed(keys):
             app_label, sql_name = key
-            new_node = self.to_sql_graph.nodes[key]
+            new_item = self.to_sql_graph.nodes[key]
+            old_item = self.from_sql_graph.nodes[key]
             sql_deps = [n.key for n in self.to_sql_graph.node_map[key].parents]
+            reverse_sql = new_item.reverse_sql
 
             if key in changed_keys:
                 operation_cls = AlterSQL
                 kwargs = {}
+                if new_item.replace:
+                    kwargs['state_reverse_sql'] = reverse_sql
+                    reverse_sql = old_item.sql
             else:
                 operation_cls = CreateSQL
                 kwargs = {'dependencies': set(sql_deps)}
 
-            operation = operation_cls(sql_name, new_node.sql, reverse_sql=new_node.reverse_sql,
-                                      **kwargs)
+            operation = operation_cls(
+                sql_name, new_item.sql, reverse_sql=reverse_sql, **kwargs)
             sql_deps.append(key)
             self.add_sql_operation(app_label, sql_name, operation, sql_deps)
 
@@ -199,8 +207,8 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             if removed_deps or added_deps:
                 dep_changed_keys.append((key, removed_deps, added_deps))
 
-        keys = self.sort_sql_changes(new_keys, changed_keys, self.to_sql_graph.node_map)
-        delete_keys = self.sort_sql_changes(delete_keys, set(), self.from_sql_graph.node_map)
+        keys = self.sort_sql_changes(new_keys, changed_keys, self.to_sql_graph)
+        delete_keys = self.sort_sql_changes(delete_keys, set(), self.from_sql_graph)
 
         self._sql_operations = {}
         self._generate_reversed_sql(keys, changed_keys)

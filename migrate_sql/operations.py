@@ -85,9 +85,17 @@ class ReverseAlterSQL(BaseAlterSQL):
 
 
 class AlterSQL(BaseAlterSQL):
+    def __init__(self, name, sql, reverse_sql=None, state_operations=None, hints=None,
+                 state_reverse_sql=None):
+        super(AlterSQL, self).__init__(name, sql, reverse_sql=reverse_sql,
+                                       state_operations=state_operations, hints=hints)
+        self.state_reverse_sql = state_reverse_sql
+
     def deconstruct(self):
         name, args, kwargs = super(AlterSQL, self).deconstruct()
         kwargs['name'] = self.name
+        if self.state_reverse_sql:
+            kwargs['state_reverse_sql'] = self.state_reverse_sql
         return (name, args, kwargs)
 
     def describe(self):
@@ -105,7 +113,7 @@ class AlterSQL(BaseAlterSQL):
 
         sql_item = sql_config.nodes[key]
         sql_item.sql = self.sql
-        sql_item.reverse_sql = self.reverse_sql
+        sql_item.reverse_sql = self.state_reverse_sql or self.reverse_sql
 
 
 class CreateSQL(BaseAlterSQL):
