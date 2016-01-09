@@ -6,10 +6,10 @@ from migrate_sql import SQLItem
 
 
 class MigrateSQLMixin(object):
-    def get_sql_state(self, state):
-        if not hasattr(state, 'custom_sql'):
-            setattr(state, 'custom_sql', SQLStateGraph())
-        return state.custom_sql
+    def get_sql_config(self, state):
+        if not hasattr(state, 'sql_config'):
+            setattr(state, 'sql_config', SQLStateGraph())
+        return state.sql_config
 
 
 class AlterSQLState(MigrateSQLMixin, Operation):
@@ -27,15 +27,15 @@ class AlterSQLState(MigrateSQLMixin, Operation):
         return (self.__class__.__name__, [], kwargs)
 
     def state_forwards(self, app_label, state):
-        custom_sql = self.get_sql_state(state)
+        sql_config = self.get_sql_config(state)
         key = (app_label, self.name)
 
-        if key not in custom_sql.nodes:
+        if key not in sql_config.nodes:
             # XXX: dummy for `migrate` command, that does not preserve state object.
             # Should fail with error when fixed.
             return
 
-        sql_item = custom_sql.nodes[key]
+        sql_item = sql_config.nodes[key]
 
         for dep in self.add_dependencies:
             # we are also adding relations to aggregated SQLItem, but only to restore
@@ -45,11 +45,11 @@ class AlterSQLState(MigrateSQLMixin, Operation):
             # Fail with error when fixed
             if dep in sql_item.dependencies:
                 sql_item.dependencies.remove(dep)
-            custom_sql.add_lazy_dependency(key, dep)
+            sql_config.add_lazy_dependency(key, dep)
 
         for dep in self.remove_dependencies:
             sql_item.dependencies.append(dep)
-            custom_sql.remove_lazy_dependency(key, dep)
+            sql_config.remove_lazy_dependency(key, dep)
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         pass
@@ -95,15 +95,15 @@ class AlterSQL(BaseAlterSQL):
 
     def state_forwards(self, app_label, state):
         super(AlterSQL, self).state_forwards(app_label, state)
-        custom_sql = self.get_sql_state(state)
+        sql_config = self.get_sql_config(state)
         key = (app_label, self.name)
 
-        if key not in custom_sql.nodes:
+        if key not in sql_config.nodes:
             # XXX: dummy for `migrate` command, that does not preserve state object.
             # Fail with error when fixed
             return
 
-        sql_item = custom_sql.nodes[key]
+        sql_item = sql_config.nodes[key]
         sql_item.sql = self.sql
         sql_item.reverse_sql = self.reverse_sql
 
@@ -127,15 +127,15 @@ class CreateSQL(BaseAlterSQL):
 
     def state_forwards(self, app_label, state):
         super(CreateSQL, self).state_forwards(app_label, state)
-        custom_sql = self.get_sql_state(state)
+        sql_config = self.get_sql_config(state)
 
-        custom_sql.add_node(
+        sql_config.add_node(
             (app_label, self.name),
             SQLItem(self.name, self.sql, self.reverse_sql, list(self.dependencies)),
         )
 
         for dep in self.dependencies:
-            custom_sql.add_lazy_dependency((app_label, self.name), dep)
+            sql_config.add_lazy_dependency((app_label, self.name), dep)
 
 
 class DeleteSQL(BaseAlterSQL):
@@ -144,7 +144,7 @@ class DeleteSQL(BaseAlterSQL):
 
     def state_forwards(self, app_label, state):
         super(DeleteSQL, self).state_forwards(app_label, state)
-        custom_sql = self.get_sql_state(state)
+        sql_config = self.get_sql_config(state)
 
-        custom_sql.remove_node((app_label, self.name))
-        custom_sql.remove_lazy_for_child((app_label, self.name))
+        sql_config.remove_node((app_label, self.name))
+        sql_config.remove_lazy_for_child((app_label, self.name))

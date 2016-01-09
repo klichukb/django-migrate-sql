@@ -62,7 +62,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
     def __init__(self, from_state, to_state, questioner=None, to_sql_graph=None):
         super(MigrationAutodetector, self).__init__(from_state, to_state, questioner)
         self.to_sql_graph = to_sql_graph
-        self.from_sql_graph = getattr(self.from_state, 'custom_sql', None) or SQLStateGraph()
+        self.from_sql_graph = getattr(self.from_state, 'sql_config', None) or SQLStateGraph()
         self.from_sql_graph.build_graph()
         self._sql_operations = []
 
