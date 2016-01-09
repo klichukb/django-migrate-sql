@@ -1,7 +1,10 @@
-from collections import namedtuple, defaultdict
+from collections import defaultdict
+from importlib import import_module
 
 from django.db.migrations.graph import Node, NodeNotFoundError
-from django.apps import apps
+from django.conf import settings
+
+SQL_CONFIG_MODULE = settings.__dict__.get('SQL_CONFIG_MODULE', 'sql_config')
 
 
 class SQLStateGraph(object):
@@ -72,14 +75,16 @@ def build_current_graph():
         (SQLStateGraph) Current project state graph.
     """
     graph = SQLStateGraph()
-    for config in apps.get_app_configs():
-        if not hasattr(config, 'custom_sql'):
+    for app_name in settings.INSTALLED_APPS:
+        try:
+            module = import_module('.'.join((app_name, SQL_CONFIG_MODULE)))
+            sql_items = module.sql_items
+        except (ImportError, AttributeError):
             continue
-
-        for sql_item in config.custom_sql:
-            graph.add_node((config.label, sql_item.name), sql_item)
+        for sql_item in sql_items:
+            graph.add_node((app_name, sql_item.name), sql_item)
 
             for dep in sql_item.dependencies:
-                graph.add_lazy_dependency((config.label, sql_item.name), dep)
+                graph.add_lazy_dependency((app_name, sql_item.name), dep)
     graph.build_graph()
     return graph

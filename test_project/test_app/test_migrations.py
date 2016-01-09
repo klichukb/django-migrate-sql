@@ -67,16 +67,16 @@ def run_query(sql, params=None):
 class BaseMigrateSQLTestCase(TestCase):
     def setUp(self):
         super(BaseMigrateSQLTestCase, self).setUp()
-        self.config = apps.get_app_config('test_app')
-        self.config2 = apps.get_app_config('test_app2')
+        self.config = import_module('test_app.sql_config')
+        self.config2 = import_module('test_app2.sql_config')
         self.out = StringIO()
 
     def tearDown(self):
         super(BaseMigrateSQLTestCase, self).tearDown()
-        if hasattr(self.config, 'custom_sql'):
-            del self.config.custom_sql
-        if hasattr(self.config2, 'custom_sql'):
-            del self.config2.custom_sql
+        if hasattr(self.config, 'sql_items'):
+            delattr(self.config, 'sql_items')
+        if hasattr(self.config2, 'sql_items'):
+            delattr(self.config2, 'sql_items')
 
     def check_migrations_content(self, expected):
         loader = MigrationLoader(None, load=True)
@@ -197,7 +197,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
     def test_migration_add(self):
         sql, reverse_sql = self.SQL_V1
-        self.config.custom_sql = [SQLItem('top_books', sql, reverse_sql)]
+        self.config.sql_items = [SQLItem('top_books', sql, reverse_sql)]
         expected_content = {
             ('test_app', '0002'): (
                 True,
@@ -212,7 +212,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
     def test_migration_change(self):
         sql, reverse_sql = self.SQL_V2
-        self.config.custom_sql = [SQLItem('top_books', sql, reverse_sql)]
+        self.config.sql_items = [SQLItem('top_books', sql, reverse_sql)]
 
         expected_content = {
             ('test_app', '0003'): (
@@ -229,7 +229,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(expected_content, expected_results, 'test_app.migrations_change')
 
     def test_migration_delete(self):
-        self.config.custom_sql = []
+        self.config.sql_items = []
 
         expected_content = {
             ('test_app', '0003'): (
@@ -245,7 +245,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
     def test_migration_recreate(self):
         sql, reverse_sql = self.SQL_V2
-        self.config.custom_sql = [SQLItem('top_books', sql, reverse_sql)]
+        self.config.sql_items = [SQLItem('top_books', sql, reverse_sql)]
 
         expected_content = {
             ('test_app', '0004'): (
@@ -331,12 +331,12 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
                     self.check_type(*check_case)
 
     def test_deps_create(self):
-        self.config.custom_sql = [
+        self.config.sql_items = [
             item('rating', 1),
             item('book', 1),
             item('narration', 1, [('test_app2', 'sale'), ('test_app', 'book')]),
         ]
-        self.config2.custom_sql = [item('sale', 1)]
+        self.config2.sql_items = [item('sale', 1)]
         expected_content = {
             ('test_app2', '0001'): (
                 True,
@@ -356,7 +356,7 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(expected_content, migrations)
 
     def test_deps_update(self):
-        self.config.custom_sql = [
+        self.config.sql_items = [
             item('rating', 1),
             item('edition', 1),
             item('author', 1, [('test_app', 'book')]),
@@ -365,7 +365,7 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             item('product', 1,
                  [('test_app', 'book'), ('test_app', 'author'), ('test_app', 'edition')]),
         ]
-        self.config2.custom_sql = [item('sale', 2)]
+        self.config2.sql_items = [item('sale', 2)]
 
         expected_content = {
             ('test_app', '0003'): (
@@ -397,12 +397,12 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         )
 
     def test_deps_no_changes(self):
-        self.config.custom_sql = [
+        self.config.sql_items = [
             item('rating', 1),
             item('book', 1),
             item('narration', 1, [('test_app2', 'sale'), ('test_app', 'book')]),
         ]
-        self.config2.custom_sql = [item('sale', 1)]
+        self.config2.sql_items = [item('sale', 1)]
 
         expected_content = {
             ('test_app', '0003'): (False, [], []),
@@ -415,11 +415,11 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         )
 
     def test_deps_delete(self):
-        self.config.custom_sql = [
+        self.config.sql_items = [
             item('rating', 1),
             item('edition', 1),
         ]
-        self.config2.custom_sql = []
+        self.config2.sql_items = []
 
         expected_content = {
             ('test_app', '0005'): (
