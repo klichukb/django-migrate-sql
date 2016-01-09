@@ -4,4 +4,4 @@ class SQLItem(object):
         self.name = name
         self.sql = sql
         self.reverse_sql = reverse_sql
-        self.dependencies = dependencies or ()
+        self.dependencies = dependencies or []
