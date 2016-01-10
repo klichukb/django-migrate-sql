@@ -16,6 +16,10 @@ class MigrateSQLMixin(object):
 
 
 class AlterSQLState(MigrateSQLMixin, Operation):
+    """
+    Alters in-memory state of SQL item.
+    This operation is generated separately from others since it does not affect database.
+    """
     def describe(self):
         return 'Alter SQL state "{name}"'.format(name=self.name)
 
@@ -65,12 +69,23 @@ class AlterSQLState(MigrateSQLMixin, Operation):
         return True
 
     def __init__(self, name, add_dependencies=None, remove_dependencies=None):
+        """
+        Args:
+            name (str): Name of SQL item in current application to alter state for.
+            add_dependencies (list):
+                Unordered list of dependencies to add to state.
+            remove_dependencies (list):
+                Unordered list of dependencies to remove from state.
+        """
         self.name = name
         self.add_dependencies = add_dependencies or ()
         self.remove_dependencies = remove_dependencies or ()
 
 
 class BaseAlterSQL(MigrateSQLMixin, RunSQL):
+    """
+    Base class for operations that alter database.
+    """
     def __init__(self, name, sql, reverse_sql=None, state_operations=None, hints=None):
         super(BaseAlterSQL, self).__init__(sql, reverse_sql=reverse_sql,
                                            state_operations=state_operations, hints=hints)
@@ -88,8 +103,20 @@ class ReverseAlterSQL(BaseAlterSQL):
 
 
 class AlterSQL(BaseAlterSQL):
+    """
+    Updates SQL item with a new version.
+    """
     def __init__(self, name, sql, reverse_sql=None, state_operations=None, hints=None,
                  state_reverse_sql=None):
+        """
+        Args:
+            name (str): Name of SQL item in current application to alter state for.
+            sql (str/list): Forward SQL for item creation.
+            reverse_sql (str/list): Backward SQL for reversing create operation.
+            state_reverse_sql (str/list): Backward SQL used to alter state of backward SQL
+                *instead* of `reverse_sql`. Used for operations generated for items with
+                `replace` = `True`.
+        """
         super(AlterSQL, self).__init__(name, sql, reverse_sql=reverse_sql,
                                        state_operations=state_operations, hints=hints)
         self.state_reverse_sql = state_reverse_sql
@@ -120,6 +147,9 @@ class AlterSQL(BaseAlterSQL):
 
 
 class CreateSQL(BaseAlterSQL):
+    """
+    Creates new SQL item in database.
+    """
     def describe(self):
         return 'Create SQL "{name}"'.format(name=self.name)
 
@@ -150,6 +180,9 @@ class CreateSQL(BaseAlterSQL):
 
 
 class DeleteSQL(BaseAlterSQL):
+    """
+    Deltes SQL item from database.
+    """
     def describe(self):
         return 'Delete SQL "{name}"'.format(name=self.name)
 
