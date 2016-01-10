@@ -140,19 +140,21 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
         for key in reversed(keys):
             app_label, sql_name = key
             new_item = self.to_sql_graph.nodes[key]
-            old_item = self.from_sql_graph.nodes[key]
             sql_deps = [n.key for n in self.to_sql_graph.node_map[key].parents]
             reverse_sql = new_item.reverse_sql
 
             if key in changed_keys:
                 operation_cls = AlterSQL
                 kwargs = {}
+                # in case of replace mode, AlterSQL will hold sql, reverse_sql and
+                # state_reverse_sql, the latter one will be used for building state forward
+                # instead of reverse_sql.
                 if new_item.replace:
                     kwargs['state_reverse_sql'] = reverse_sql
-                    reverse_sql = old_item.sql
+                    reverse_sql = self.from_sql_graph.nodes[key].sql
             else:
                 operation_cls = CreateSQL
-                kwargs = {'dependencies': set(sql_deps)}
+                kwargs = {'dependencies': sql_deps}
 
             operation = operation_cls(
                 sql_name, new_item.sql, reverse_sql=reverse_sql, **kwargs)
@@ -161,12 +163,20 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
 
     def _generate_altered_sql_dependencies(self, dep_changed_keys):
         """
-        Generate forward operations for changing/creating SQL items.
+        Generate forward operations for changing/creating SQL item dependencies.
+
+        Dependencies are only in-memory and should be reflecting database dependencies, so
+        changing them in SQL config does not alter database. Such actions are persisted in separate
+        type operation - `AlterSQLState`.
+
+        Args:
+            dep_changed_keys (list): Data about keys, that have their dependencies changed.
+                List of tuples (key, removed depndencies, added_dependencies).
         """
         for key, removed_deps, added_deps in dep_changed_keys:
             app_label, sql_name = key
-            operation = AlterSQLState(sql_name, add_dependencies=added_deps,
-                                      remove_dependencies=removed_deps)
+            operation = AlterSQLState(sql_name, add_dependencies=tuple(added_deps),
+                                      remove_dependencies=tuple(removed_deps))
             sql_deps = [key]
             self.add_sql_operation(app_label, sql_name, operation, sql_deps)
 
@@ -184,7 +194,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
 
     def generate_sql_changes(self):
         """
-        Starting point of this tool, which is identifies changes and generates respective
+        Starting point of this tool, which identifies changes and generates respective
         operations.
         """
         from_keys = set(self.from_sql_graph.nodes.keys())
@@ -200,8 +210,9 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
 
             if not is_sql_equal(old_node.sql, new_node.sql):
                 changed_keys.add(key)
-            old_deps = self.from_sql_graph.dependencies[key]
-            new_deps = self.to_sql_graph.dependencies[key]
+
+            old_deps = set(self.from_sql_graph.dependencies[key])
+            new_deps = set(self.to_sql_graph.dependencies[key])
             removed_deps = old_deps - new_deps
             added_deps = new_deps - old_deps
             if removed_deps or added_deps:
