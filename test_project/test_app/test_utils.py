@@ -4,6 +4,9 @@ from migrate_sql.autodetector import is_sql_equal
 
 
 class SQLComparisonTestCase(TestCase):
+    """
+    Tests comparison algorithm for two SQL item contents.
+    """
     def test_flat(self):
         self.assertTrue(is_sql_equal('SELECT 1', 'SELECT 1'))
         self.assertFalse(is_sql_equal('SELECT 1', 'SELECT 2'))
