@@ -1,3 +1,8 @@
+"""
+Replaces built-in Django command and forces it generate SQL item modification operations
+into regular Django migrations.
+"""
+
 import sys
 
 from django.core.management.commands.makemigrations import Command as MakeMigrationsCommand
@@ -74,6 +79,8 @@ class Command(MakeMigrationsCommand):
             return self.handle_merge(loader, conflicts)
 
         state = loader.project_state()
+
+        # NOTE: customization. Passing graph to autodetector.
         sql_graph = build_current_graph()
 
         # Set up autodetector
