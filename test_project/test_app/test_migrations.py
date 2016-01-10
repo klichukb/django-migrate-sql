@@ -22,6 +22,9 @@ from migrate_sql import SQLItem
 
 
 class TupleComposite(CompositeCaster):
+    """
+    Loads composite type object as tuple.
+    """
     def make(self, values):
         return tuple(values)
 
@@ -44,6 +47,16 @@ def module_dir(module):
 
 
 def item(name, version, dependencies=None):
+    """
+    Creates mock SQL item represented by Postgre composite type.
+    Returns:
+        (SQLItem): Resuling composite type:
+            * sql = CREATE TYPE <name> AS (
+                [<dep1> <dep1_type>, ..., <depN> <depN_type>], arg1 int, arg2 int, .., argN int);
+            dependencies are arguments, version affects amount of extra int arguments.
+            Version = 1 means one int argument.
+            * sql = DROP TYPE <name>.
+    """
     dependencies = dependencies or ()
     args = ', '.join(['{name}{ver} {name}'.format(name=dep[1], ver=version)
                       for dep in dependencies] + ['arg{i} int'.format(i=i + 1)
@@ -55,6 +68,9 @@ def item(name, version, dependencies=None):
 
 
 def mig_name(name):
+    """
+    Returns name[0] (app name) and first 4 letters of migartion name (name[1]).
+    """
     return name[0], name[1][:4]
 
 
@@ -65,6 +81,9 @@ def run_query(sql, params=None):
 
 
 class BaseMigrateSQLTestCase(TestCase):
+    """
+    Tests `migrate_sql` using sample PostgreSQL functions and their body/argument changes.
+    """
     def setUp(self):
         super(BaseMigrateSQLTestCase, self).setUp()
         self.config = import_module('test_app.sql_config')
@@ -79,6 +98,9 @@ class BaseMigrateSQLTestCase(TestCase):
             delattr(self.config2, 'sql_items')
 
     def check_migrations_content(self, expected):
+        """
+        Check content (operations) of migrations.
+        """
         loader = MigrationLoader(None, load=True)
         available = loader.disk_migrations.keys()
         for expc_mig, (check_exists, dependencies, operations) in expected.items():
@@ -193,6 +215,9 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         Book.objects.bulk_create(books)
 
     def check_run_migrations(self, migrations):
+        """
+        Launch migrations requested and compare results.
+        """
         for migration, expected in migrations:
             call_command('migrate', 'test_app', migration, stdout=self.out)
             if expected:
@@ -203,6 +228,9 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
                 self.assertEqual(result, [(0,)])
 
     def check_migrations(self, content, results, migration_module=None, app_label='test_app'):
+        """
+        Checks migrations content and results after being run.
+        """
         with self.temporary_migration_module(module=migration_module):
             call_command('makemigrations', app_label, stdout=self.out)
             self.check_migrations_content(content)
@@ -211,6 +239,9 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             self.check_run_migrations(results)
 
     def test_migration_add(self):
+        """
+        Items newly created should be properly persisted into migrations and created in database.
+        """
         sql, reverse_sql = self.SQL_V1
         self.config.sql_items = [SQLItem('top_books', sql, reverse_sql)]
         expected_content = {
@@ -226,6 +257,9 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(expected_content, expected_results)
 
     def test_migration_change(self):
+        """
+        Items changed should properly persist changes into migrations and alter database.
+        """
         sql, reverse_sql = self.SQL_V2
         self.config.sql_items = [SQLItem('top_books', sql, reverse_sql)]
 
@@ -244,6 +278,10 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(expected_content, expected_results, 'test_app.migrations_change')
 
     def test_migration_replace(self):
+        """
+        Items changed with `replace` = Truel should properly persist changes into migrations and
+        replace object in database without reversing previously.
+        """
         sql, reverse_sql = self.SQL_V3
         self.config.sql_items = [SQLItem('top_books', sql, reverse_sql, replace=True)]
 
@@ -263,6 +301,9 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(expected_content, expected_results, 'test_app.migrations_change')
 
     def test_migration_delete(self):
+        """
+        Items deleted should properly embed deletion into migration and run backward SQL in DB.
+        """
         self.config.sql_items = []
 
         expected_content = {
@@ -278,6 +319,9 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(expected_content, expected_results, 'test_app.migrations_change')
 
     def test_migration_recreate(self):
+        """
+        Items created after deletion should properly embed recreation into migration and alter DB.
+        """
         sql, reverse_sql = self.SQL_V2
         self.config.sql_items = [SQLItem('top_books', sql, reverse_sql)]
 
@@ -296,6 +340,17 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
 
 
 class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
+    """
+    Tests SQL item dependencies system.
+    """
+
+    # Expected datasets (input and output) for different migration states.
+    # When migration is run, database is checked against expected result.
+    # Key = name of migration (app, name), value is a list of :
+    # * SQL arguments passed to Postgre's ROW
+    # * composite type to cast ROW built above into.
+    # * dependency types (included into psycopg2 `register_composite`)
+    # * expected result after fetching built ROW from database.
     RESULTS_EXPECTED = {
         ('test_app', '0004'): [
             # product check
@@ -338,6 +393,9 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
     }
 
     def check_type(self, repr_sql, fetch_type, known_types, expect):
+        """
+        Checks composite type structure and format.
+        """
         cursor = connection.cursor()
         if repr_sql:
             for _type in known_types:
@@ -353,6 +411,9 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             self.assertEqual(result, [(0,)])
 
     def check_migrations(self, content, migrations, module=None, module2=None):
+        """
+        Checks migrations content and result after being run.
+        """
         with nested(self.temporary_migration_module(app_label='test_app', module=module),
                     self.temporary_migration_module(app_label='test_app2', module=module2)):
             call_command('makemigrations', stdout=self.out)
@@ -365,6 +426,9 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
                     self.check_type(*check_case)
 
     def test_deps_create(self):
+        """
+        Creating a graph of items with dependencies should embed relations in migrations.
+        """
         self.config.sql_items = [
             item('rating', 1),
             item('book', 1),
@@ -390,6 +454,9 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         self.check_migrations(expected_content, migrations)
 
     def test_deps_update(self):
+        """
+        Updating a graph of items with dependencies should embed relation changes in migrations.
+        """
         self.config.sql_items = [
             item('rating', 1),
             item('edition', 1),
@@ -431,6 +498,9 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         )
 
     def test_deps_circular(self):
+        """
+        Graph with items that refer to themselves in their dependencies should raise an error.
+        """
         from django.db.migrations.graph import CircularDependencyError
 
         self.config.sql_items = [
@@ -447,6 +517,9 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             )
 
     def test_deps_no_changes(self):
+        """
+        In case no changes are made to structure of sql config, no migrations should be created.
+        """
         self.config.sql_items = [
             item('rating', 1),
             item('book', 1),
@@ -465,6 +538,10 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         )
 
     def test_deps_delete(self):
+        """
+        Graph with items that gets some of them removed along with dependencies should reflect
+        changes into migrations.
+        """
         self.config.sql_items = [
             item('rating', 1),
             item('edition', 1),
