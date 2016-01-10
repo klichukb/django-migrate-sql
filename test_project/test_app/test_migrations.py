@@ -18,7 +18,7 @@ from django.conf import settings
 from django.test.utils import extend_sys_path
 
 from test_app.models import Book
-from migrate_sql import SQLItem
+from migrate_sql.config import SQLItem
 
 
 class TupleComposite(CompositeCaster):

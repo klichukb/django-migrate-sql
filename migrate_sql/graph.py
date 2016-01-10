@@ -3,6 +3,7 @@ from importlib import import_module
 
 from django.db.migrations.graph import Node, NodeNotFoundError, CircularDependencyError
 from django.conf import settings
+from django.apps import apps
 
 SQL_CONFIG_MODULE = settings.__dict__.get('SQL_CONFIG_MODULE', 'sql_config')
 
@@ -101,9 +102,10 @@ def build_current_graph():
         (SQLStateGraph) Current project state graph.
     """
     graph = SQLStateGraph()
-    for app_name in settings.INSTALLED_APPS:
+    for app_name, config in apps.app_configs.items():
         try:
-            module = import_module('.'.join((app_name, SQL_CONFIG_MODULE)))
+            module = import_module(
+                '.'.join((config.module.__name__, SQL_CONFIG_MODULE)))
             sql_items = module.sql_items
         except (ImportError, AttributeError):
             continue

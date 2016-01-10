@@ -2,7 +2,7 @@ from django.db.migrations.operations import RunSQL
 from django.db.migrations.operations.base import Operation
 
 from migrate_sql.graph import SQLStateGraph
-from migrate_sql import SQLItem
+from migrate_sql.config import SQLItem
 
 
 class MigrateSQLMixin(object):
