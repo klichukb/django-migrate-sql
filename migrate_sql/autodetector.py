@@ -211,8 +211,8 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             if not is_sql_equal(old_node.sql, new_node.sql):
                 changed_keys.add(key)
 
-            old_deps = set(self.from_sql_graph.dependencies[key])
-            new_deps = set(self.to_sql_graph.dependencies[key])
+            old_deps = self.from_sql_graph.dependencies[key]
+            new_deps = self.to_sql_graph.dependencies[key]
             removed_deps = old_deps - new_deps
             added_deps = new_deps - old_deps
             if removed_deps or added_deps:
