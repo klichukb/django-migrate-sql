@@ -395,7 +395,7 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             item('edition', 1),
             item('author', 1, [('test_app', 'book')]),
             item('narration', 1,  [('test_app2', 'sale'), ('test_app', 'book')]),
-            item('book', 2, [('test_app2', 'sale'), ('test_app', 'rating')]),
+            item('book', 2, [('test_app2', 'sale'), ('test_app', 'rating'), ('test_app', 'narration')]),
             item('product', 1,
                  [('test_app', 'book'), ('test_app', 'author'), ('test_app', 'edition')]),
         ]
