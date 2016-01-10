@@ -63,13 +63,13 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
     def __init__(self, from_state, to_state, questioner=None, to_sql_graph=None):
         super(MigrationAutodetector, self).__init__(from_state, to_state, questioner)
         self.to_sql_graph = to_sql_graph
-        self.from_sql_graph = getattr(self.from_state, 'sql_config', None) or SQLStateGraph()
+        self.from_sql_graph = getattr(self.from_state, 'sql_state', None) or SQLStateGraph()
         self.from_sql_graph.build_graph()
         self._sql_operations = []
 
-    def sort_sql_changes(self, keys, resolve_keys, sql_state):
+    def assemble_changes(self, keys, resolve_keys, sql_state):
         """
-        Accepts keys of SQL items available and sort them, adding additional dependencies.
+        Accepts keys of SQL items available, sorts them and adds additional dependencies.
         Uses graph of `sql_state` nodes to build `keys` and `resolve_keys` into sequence that
         starts with leaves (items that have not dependents) and ends with roots.
 
@@ -208,9 +208,11 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             old_node = self.from_sql_graph.nodes[key]
             new_node = self.to_sql_graph.nodes[key]
 
+            # identify SQL changes -- these will alter database.
             if not is_sql_equal(old_node.sql, new_node.sql):
                 changed_keys.add(key)
 
+            # identify dependencies change
             old_deps = self.from_sql_graph.dependencies[key]
             new_deps = self.to_sql_graph.dependencies[key]
             removed_deps = old_deps - new_deps
@@ -218,8 +220,11 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
             if removed_deps or added_deps:
                 dep_changed_keys.append((key, removed_deps, added_deps))
 
-        keys = self.sort_sql_changes(new_keys, changed_keys, self.to_sql_graph)
-        delete_keys = self.sort_sql_changes(delete_keys, set(), self.from_sql_graph)
+        # we do basic sort here and inject dependency keys here.
+        # operations built using these keys will properly set operation dependencies which will
+        # enforce django to build/keep a correct order of operations (stable_topological_sort).
+        keys = self.assemble_changes(new_keys, changed_keys, self.to_sql_graph)
+        delete_keys = self.assemble_changes(delete_keys, set(), self.from_sql_graph)
 
         self._sql_operations = {}
         self._generate_reversed_sql(keys, changed_keys)
@@ -232,7 +237,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
         Enhances default behavior of method by checking dependency for matching operation.
         """
         if isinstance(dependency[1], SQLBlob):
-            # we follow the sort order created by `sort_sql_changes` so we build a fixed chain
+            # NOTE: we follow the sort order created by `assemble_changes` so we build a fixed chain
             # of operations. thus we should match exact operation here.
             return dependency[3] == operation
         return super(MigrationAutodetector, self).check_dependency(operation, dependency)
