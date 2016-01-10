@@ -395,7 +395,7 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             item('edition', 1),
             item('author', 1, [('test_app', 'book')]),
             item('narration', 1,  [('test_app2', 'sale'), ('test_app', 'book')]),
-            item('book', 2, [('test_app2', 'sale'), ('test_app', 'rating'), ('test_app', 'narration')]),
+            item('book', 2, [('test_app2', 'sale'), ('test_app', 'rating')]),
             item('product', 1,
                  [('test_app', 'book'), ('test_app', 'author'), ('test_app', 'edition')]),
         ]
@@ -429,6 +429,22 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             expected_content, migrations,
             module='test_app.migrations_deps_update', module2='test_app2.migrations_deps_update',
         )
+
+    def test_deps_circular(self):
+        from django.db.migrations.graph import CircularDependencyError
+
+        self.config.sql_items = [
+            item('narration', 1,  [('test_app2', 'sale'), ('test_app', 'book')]),
+            item('book', 2, [('test_app2', 'sale'), ('test_app', 'narration')]),
+        ]
+        self.config2.sql_items = [item('sale', 1)]
+
+        with self.assertRaises(CircularDependencyError):
+            self.check_migrations(
+                {}, (),
+                module='test_app.migrations_deps_update',
+                module2='test_app2.migrations_deps_update',
+            )
 
     def test_deps_no_changes(self):
         self.config.sql_items = [
