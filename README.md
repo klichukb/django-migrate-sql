@@ -146,7 +146,7 @@ Migrations for 'app_name':
 
 You can take a look at the content this generated:
 
-```
+```python
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 from django.db import migrations, models
