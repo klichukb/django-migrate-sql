@@ -3,8 +3,10 @@
 [![Build Status](https://travis-ci.org/klichukb/django-migrate-sql.svg?branch=master)](https://travis-ci.org/klichukb/django-migrate-sql)
 [![codecov.io](https://img.shields.io/codecov/c/github/klichukb/django-migrate-sql/master.svg)](https://codecov.io/github/klichukb/django-migrate-sql?branch=master)
 
-Django Migrations support for raw SQL
+Django Migrations support for raw SQL.
 
+## About
+This tool implements mechanism for managing changes to custom SQL entities (functions, types, indices, triggers) using built-in migration mechanism. Technically creates a sophistication layer on top of the `RunSQL` Django operation.
 
 ## What it does
 * Makes maintaining your SQL functions, custom composite types, indices and triggers easier.
