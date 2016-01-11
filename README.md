@@ -13,8 +13,6 @@ Django Migrations support for raw SQL
 * Dependencies system for SQL items, which solves the problem of updating items, that rely on others (for example custom types/functions that use other custom types), and require dropping all dependency tree previously with further recreation.
 
 ## What it does not
-* Does not create `ALTER` queries for items that support this, for example `ALTER TYPE` in Postgre SQL, because is database-agnostic. In case your tools allow rolling all the changes through `ALTER` queries, you can consider not using this app **or** restructure migrations manually after creation by nesting generated operations into `state_operations` of basic `RunSQL` that does `ALTER`s.
-* Does not validate SQL nor preprocesses queries during `makemigrations` or `migrate` because is database-agnostic.
-* Does not check whether SQL config dependencies do match database relations/dependencies because guess why.
-* (**TODO**)(During `./manage.py migrate` does not restore full state of items for analysis, thus does not notify about existing changes to schema that are not migrated **and** does not recognize circular dependencies during migration execution.
-* (
+* Does not parse SQL nor validate queries during `makemigrations` or `migrate` because is database-agnostic. For this same reason setting up proper dependencies is user's responsibility.
+* Does not create `ALTER` queries for items that support this, for example `ALTER TYPE` in Postgre SQL, because is database-agnostic. In case your tools allow rolling all the changes through `ALTER` queries, you can consider not using this app **or** restructure migrations manually after creation by nesting generated operations into [`state_operations` of `RunSQL`](https://docs.djangoproject.com/en/1.8/ref/migration-operations/#runsql) that does `ALTER`.
+* (**TODO**)(During `migrate` does not restore full state of items for analysis, thus does not notify about existing changes to schema that are not migrated **nor** does not recognize circular dependencies during migration execution.
