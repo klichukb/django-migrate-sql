@@ -56,3 +56,6 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# local settings
+settings_local.py
