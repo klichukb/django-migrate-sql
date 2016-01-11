@@ -1,8 +1,10 @@
 # django-migrate-sql
-Django Migrations support for raw SQL
 
 [![Build Status](https://travis-ci.org/klichukb/django-migrate-sql.svg?branch=master)](https://travis-ci.org/klichukb/django-migrate-sql)
 [![codecov.io](https://img.shields.io/codecov/c/github/klichukb/django-migrate-sql/master.svg)](https://codecov.io/github/klichukb/django-migrate-sql?branch=master)
+
+Django Migrations support for raw SQL
+
 
 ## What it does
 * Makes maintaining your SQL functions, custom composite types, indices and triggers easier.
