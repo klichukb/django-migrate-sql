@@ -10,6 +10,9 @@ addons:
 services:
     - postgresql
 
+before_install:
+    - pip install codecov
+
 install:
     - pip install tox
 
@@ -19,6 +22,5 @@ before_script:
 script:
     - tox -e $TOX_ENV
 
-after_install:
-    - pip install codecov
+after_success:
     - codecov -e TOX_ENV
