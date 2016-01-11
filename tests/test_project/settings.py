@@ -63,8 +63,8 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
         'NAME': 'migrate_sql_test_db',
-        'USER': 'migrate_sql_test_db',
-        'PASSWORD': 'test',
+        'USER': 'postgres',
+        # 'PASSWORD': 'test',
         'HOST': 'localhost',
         'PORT': 5432,
     }

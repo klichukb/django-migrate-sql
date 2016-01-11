@@ -6,8 +6,18 @@ env:
     - TOX_ENV=py27-django18
     - TOX_ENV=py27-django19
 
+
+addons:
+    postgesql: "9.3"
+
+services:
+    - postgresql
+
 install:
     - pip install tox
+
+before_script:
+    - psql -c 'create database migrate_sql_test_db;' -U postgres
 
 script:
     - tox -e $TOX_ENV
