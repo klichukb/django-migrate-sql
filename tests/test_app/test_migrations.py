@@ -67,6 +67,22 @@ def item(name, version, dependencies=None):
     return SQLItem(name, sql, reverse_sql, dependencies=dependencies)
 
 
+def contains_ordered(lst, order):
+    """
+    Checks if `order` sequence exists in `lst` in the defined order.
+    """
+    prev_idx = -1
+    try:
+        for item in order:
+            idx = lst.index(item)
+            if idx <= prev_idx:
+                return False
+            prev_idx = idx
+    except ValueError:
+        return False
+    return True
+
+
 def mig_name(name):
     """
     Returns name[0] (app name) and first 4 letters of migartion name (name[1]).
@@ -103,7 +119,7 @@ class BaseMigrateSQLTestCase(TestCase):
         """
         loader = MigrationLoader(None, load=True)
         available = loader.disk_migrations.keys()
-        for expc_mig, (check_exists, dependencies, operations) in expected.items():
+        for expc_mig, (check_exists, dependencies, op_groups) in expected.items():
             key = next((mig for mig in available if mig_name(mig) == mig_name(expc_mig)), None)
             if check_exists:
                 self.assertIsNotNone(key, 'Expected migration {} not found.'.format(expc_mig))
@@ -112,8 +128,9 @@ class BaseMigrateSQLTestCase(TestCase):
                 continue
             migration = loader.disk_migrations[key]
             self.assertEqual({mig_name(dep) for dep in migration.dependencies}, set(dependencies))
-            self.assertEqual([(op.__class__.__name__, op.name) for op in migration.operations],
-                             operations)
+            mig_ops = [(op.__class__.__name__, op.name) for op in migration.operations]
+            for op_group in op_groups:
+                self.assertTrue(contains_ordered(mig_ops, op_group))
 
     @contextmanager
     def temporary_migration_module(self, app_label='test_app', module=None):
@@ -248,7 +265,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0002'): (
                 True,
                 [('test_app', '0001')],
-                [('CreateSQL', 'top_books')],
+                [[('CreateSQL', 'top_books')]],
             ),
         }
         expected_results = (
@@ -267,7 +284,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0003'): (
                 True,
                 [('test_app', '0002')],
-                [('ReverseAlterSQL', 'top_books'), ('AlterSQL', 'top_books')],
+                [[('ReverseAlterSQL', 'top_books'), ('AlterSQL', 'top_books')]],
             ),
         }
         expected_results = (
@@ -289,7 +306,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0003'): (
                 True,
                 [('test_app', '0002')],
-                [('AlterSQL', 'top_books')],
+                [[('AlterSQL', 'top_books')]],
             ),
         }
         expected_results = (
@@ -310,7 +327,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0003'): (
                 True,
                 [('test_app', '0002')],
-                [('DeleteSQL', 'top_books')],
+                [[('DeleteSQL', 'top_books')]],
             ),
         }
         expected_results = (
@@ -329,7 +346,7 @@ class MigrateSQLTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0004'): (
                 True,
                 [('test_app', '0003')],
-                [('CreateSQL', 'top_books')],
+                [[('CreateSQL', 'top_books')]],
             ),
         }
         expected_results = (
@@ -439,13 +456,13 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             ('test_app2', '0001'): (
                 True,
                 [],
-                [('CreateSQL', 'sale')],
+                [[('CreateSQL', 'sale')]],
             ),
             ('test_app', '0002'): (
                 True,
                 [('test_app2', '0001'), ('test_app', '0001')],
-                [('CreateSQL', 'book'), ('CreateSQL', 'rating'),
-                 ('CreateSQL', 'narration')],
+                [[('CreateSQL', 'rating')],
+                 [('CreateSQL', 'book'), ('CreateSQL', 'narration')]],
             ),
         }
         migrations = (
@@ -472,19 +489,20 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0003'): (
                 True,
                 [('test_app', '0002')],
-                [('ReverseAlterSQL', 'narration'), ('CreateSQL', 'edition'),
-                 ('ReverseAlterSQL', 'book')],
+                [[('CreateSQL', 'edition')],
+                 [('ReverseAlterSQL', 'narration'), ('ReverseAlterSQL', 'book')]],
             ),
             ('test_app2', '0002'): (
                 True,
                 [('test_app', '0003'), ('test_app2', '0001')],
-                [('ReverseAlterSQL', 'sale'), ('AlterSQL', 'sale')],
+                [[('ReverseAlterSQL', 'sale'), ('AlterSQL', 'sale')]],
             ),
             ('test_app', '0004'): (
                 True,
                 [('test_app2', '0002'), ('test_app', '0003')],
-                [('AlterSQL', 'book'), ('CreateSQL', 'author'),
-                 ('AlterSQL', 'narration'), ('AlterSQLState', u'book'), ('CreateSQL', 'product')],
+                [[('AlterSQL', 'book'), ('CreateSQL', 'author'), ('CreateSQL', 'product')],
+                 [('AlterSQL', 'book'), ('AlterSQL', 'narration')],
+                 [('AlterSQL', 'book'), ('AlterSQLState', u'book')]],
             ),
         }
         migrations = (
@@ -552,13 +570,13 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
             ('test_app', '0005'): (
                 True,
                 [('test_app', '0004')],
-                [('DeleteSQL', 'narration'), ('DeleteSQL', 'product'),
-                 ('DeleteSQL', 'author'), ('DeleteSQL', 'book')],
+                [[('DeleteSQL', 'narration'), ('DeleteSQL', 'book')],
+                 [('DeleteSQL', 'product'), ('DeleteSQL', 'author'), ('DeleteSQL', 'book')]],
             ),
             ('test_app2', '0003'): (
                 True,
                 [('test_app', '0005'), ('test_app2', '0002')],
-                [('DeleteSQL', 'sale')],
+                [[('DeleteSQL', 'sale')]],
             ),
         }
         migrations = (
