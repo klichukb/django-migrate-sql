@@ -80,9 +80,9 @@ class Migration(migrations.Migration):
     ]
     operations = [
         migrate_sql.operations.CreateSQL(
-            name=b'make_sum',
-            sql=b'create or replace function make_sum(a int, b int) returns int as $$ begin return a + b; end; $$ language plpgsql;',
-            reverse_sql=b'drop function make_sum(int, int);',
+            name='make_sum',
+            sql='create or replace function make_sum(a int, b int) returns int as $$ begin return a + b; end; $$ language plpgsql;',
+            reverse_sql='drop function make_sum(int, int);',
         ),
     ]
 ```
@@ -159,23 +159,23 @@ class Migration(migrations.Migration):
     ]
     operations = [
         migrate_sql.operations.ReverseAlterSQL(
-            name=b'make_sum',
-            sql=b'drop function make_sum(int, int);',
-            reverse_sql=b'create or replace function make_sum(a int, b int) returns int as $$ begin return a + b; end; $$ language plpgsql;',
+            name='make_sum',
+            sql='drop function make_sum(int, int);',
+            reverse_sql='create or replace function make_sum(a int, b int) returns int as $$ begin return a + b; end; $$ language plpgsql;',
         ),
         migrate_sql.operations.CreateSQL(
-            name=b'mynum',
-            sql=b'create type mynum as (num int, name varchar(20));',
-            reverse_sql=b'drop type mynum;',
+            name='mynum',
+            sql='create type mynum as (num int, name varchar(20));',
+            reverse_sql='drop type mynum;',
         ),
         migrate_sql.operations.AlterSQL(
-            name=b'make_sum',
-            sql=b'create or replace function make_sum(a mynum, b mynum) returns mynum as $$ begin return (a.num + b.num, \'result\')::mynum; end; $$ language plpgsql;',
-            reverse_sql=b'drop function make_sum(mynum, mynum);',
+            name='make_sum',
+            sql='create or replace function make_sum(a mynum, b mynum) returns mynum as $$ begin return (a.num + b.num, \'result\')::mynum; end; $$ language plpgsql;',
+            reverse_sql='drop function make_sum(mynum, mynum);',
         ),
         migrate_sql.operations.AlterSQLState(
-            name=b'make_sum',
-            add_dependencies=((b'app_name', b'mynum'),),
+            name='make_sum',
+            add_dependencies=(('app_name', 'mynum'),),
         ),
     ]
 ```
