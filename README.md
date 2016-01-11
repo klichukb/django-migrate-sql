@@ -40,7 +40,7 @@ App defines a custom `makemigrations` command, that inherits from Django's core 
 
 ## Usage
 1) Create `sql_config.py` module to root of a target app you want to manage custom SQL for.
-2) Define SQL items in it as follows:
+Define SQL items in it (`sql_items`), for example:
 
 ```python
 # PostgreSQL example.
@@ -50,24 +50,41 @@ from migrate_sql.config import SQLItem
 
 sql_items = [
     SQLItem(
-        # name of the item
-        'make_sum',
-        # forward sql
+        'make_sum',   # name of the item
         'create or replace function make_sum(a int, b int) returns int as $$ '
-        'begin return a + b; end; '
-        '$$ language plpgsql;',
-        # sql for removal
-        reverse_sql='drop function make_sum;',
-        # this item should not drop itself before creating new version -- 'create or replace' will replace it.
-        replace=True,
+        'begin return a + b; end; ' 
+        '$$ language plpgsql;',  # forward sql
+        reverse_sql='drop function make_sum(int, int);',  # sql for removal
     ),
 ]
 ```
 3) Create migration `./manage.py makemigrations`:
 ```
 Migrations for 'app_name':
-  0004_auto_xxxx.py:
+  0002_auto_xxxx.py:
     - Create SQL "make_sum"
+```
+
+You can take a look at content this generated:
+
+```python
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+from django.db import migrations, models
+import migrate_sql.operations
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ('app_name', '0001_initial'),
+    ]
+    operations = [
+        migrate_sql.operations.CreateSQL(
+            name=b'make_sum',
+            sql=b'create or replace function make_sum(a int, b int) returns int as $$ begin return a + b; end; $$ language plpgsql;',
+            reverse_sql=b'drop function make_sum(int, int);',
+        ),
+    ]
 ```
 4) Execute migration `./manage.py migrate`:
 ```
@@ -78,7 +95,7 @@ Running migrations:
   Applying app_name.0004_xxxx... OK
 ```
 
-5) Check result in `./manage.py dbshell`:
+Check result in `./manage.py dbshell`:
 ```
 db_name=# select make_sum(12, 15);
  make_sum 
@@ -87,10 +104,113 @@ db_name=# select make_sum(12, 15);
 (1 row)
 ```
 
+Now, say, you want to change the function implementation so that it takes a custom type as argument:
+
+5) Edit your `sql_config.py`:
+
+```python
+# PostgreSQL example #2.
+# Function and custom type.
+
+from migrate_sql.config import SQLItem
+
+sql_items = [
+    SQLItem(
+        'make_sum',  # name of the item
+        'create or replace function make_sum(a mynum, b mynum) returns mynum as $$ '
+        'begin return (a.num + b.num, 'result')::mynum; end; '
+        '$$ language plpgsql;',  # forward sql
+        reverse_sql='drop function make_sum(mynum, mynum);',  # sql for removal
+        # depends on `mynum` since takes it as argument. we won't be able to drop function
+        # without dropping `mynum` first.
+        dependencies=[('app_name', 'mynum')],
+    ),
+    SQLItem(
+        'mynum'   # name of the item
+        'create type mynum as (num int, name varchar(20));',  # forward sql
+        reverse_sql='drop type mynum;',  # sql for removal
+    ),
+]
+```
+
+6) Generate migration `./manage.py makemigrations`:
+
+```
+Migrations for 'app_name':
+  0003_xxxx:
+    - Reverse alter SQL "make_sum"
+    - Create SQL "mynum"
+    - Alter SQL "make_sum"
+    - Alter SQL state "make_sum"
+``` 
+
+You can take a look at the content this generated:
+
+```
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+from django.db import migrations, models
+import migrate_sql.operations
 
 
+class Migration(migrations.Migration):
+    dependencies = [
+        ('app_name', '0002_xxxx'),
+    ]
+    operations = [
+        migrate_sql.operations.ReverseAlterSQL(
+            name=b'make_sum',
+            sql=b'drop function make_sum(int, int);',
+            reverse_sql=b'create or replace function make_sum(a int, b int) returns int as $$ begin return a + b; end; $$ language plpgsql;',
+        ),
+        migrate_sql.operations.CreateSQL(
+            name=b'mynum',
+            sql=b'create type mynum as (num int, name varchar(20));',
+            reverse_sql=b'drop type mynum;',
+        ),
+        migrate_sql.operations.AlterSQL(
+            name=b'make_sum',
+            sql=b'create or replace function make_sum(a mynum, b mynum) returns mynum as $$ begin return (a.num + b.num, \'result\')::mynum; end; $$ language plpgsql;',
+            reverse_sql=b'drop function make_sum(mynum, mynum);',
+        ),
+        migrate_sql.operations.AlterSQLState(
+            name=b'make_sum',
+            add_dependencies=((b'app_name', b'mynum'),),
+        ),
+    ]
+```
+_**NOTE:** Previous function is completely dropped before creation
+because definition of it changed. `CREATE OR REPLACE` would create another version of it, so `DROP` makes it clean._
+
+**_If you put `replace=True` as kwarg to an `SQLItem` definition, it will NOT drop + create it, but just rerun forward SQL, which is `CREATE OR REPLACE` in this example._**
 
 
+7) Execute migration `./manage.py migrate`:
+
+```
+Operations to perform:
+  Apply all migrations: app_name
+Running migrations:
+  Rendering model states... DONE
+  Applying brands.0003_xxxx... OK
+```
+
+Check results:
+```
+db_name=# select make_sum((5, 'a')::mynum, (3, 'b')::mynum);
+  make_sum  
+------------
+ (8,result)
+(1 row)
+
+db_name=# select make_sum(12, 15);
+ERROR:  function make_sum(integer, integer) does not exist
+LINE 1: select make_sum(12, 15);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+```
+
+For more examples see `tests`.
 
 
 
