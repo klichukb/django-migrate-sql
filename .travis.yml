@@ -1,7 +1,5 @@
 language: python
 
-sudo: false
-
 env:
     - TOX_ENV=py27-django18
     - TOX_ENV=py27-django19
