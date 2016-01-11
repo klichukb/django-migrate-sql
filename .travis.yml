@@ -5,6 +5,9 @@ env:
     - TOX_ENV=py27-django19
 
 
+addons:
+    postgesql: "9.3"
+
 install:
     - pip install tox
 
