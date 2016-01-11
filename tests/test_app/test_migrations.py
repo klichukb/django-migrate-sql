@@ -111,7 +111,7 @@ class BaseMigrateSQLTestCase(TestCase):
                 self.assertIsNone(key, 'Unexpected migration {} was found.'.format(expc_mig))
                 continue
             migration = loader.disk_migrations[key]
-            self.assertEqual([mig_name(dep) for dep in migration.dependencies], dependencies)
+            self.assertEqual({mig_name(dep) for dep in migration.dependencies}, set(dependencies))
             self.assertEqual([(op.__class__.__name__, op.name) for op in migration.operations],
                              operations)
 
