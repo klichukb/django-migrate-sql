@@ -8,6 +8,9 @@ env:
 addons:
     postgesql: "9.3"
 
+services:
+    - postgresql
+
 install:
     - pip install tox
 
