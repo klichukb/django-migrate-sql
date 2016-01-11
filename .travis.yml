@@ -1,0 +1,17 @@
+language: python
+
+sudo: false
+
+env:
+    - TOX_ENV=py27-django18
+    - TOX_ENV=py27-django19
+
+install:
+    - pip install tox
+
+script:
+    - tox -e $TOX_ENV
+
+after_install:
+    - pip install codecov
+    - codecov -e TOX_ENV
