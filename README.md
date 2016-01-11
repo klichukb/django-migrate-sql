@@ -40,6 +40,7 @@ App defines a custom `makemigrations` command, that inherits from Django's core 
 
 ## Usage
 1) Create `sql_config.py` module to root of a target app you want to manage custom SQL for.
+
 2) Define SQL items in it (`sql_items`), for example:
 
 ```python
