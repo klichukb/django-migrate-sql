@@ -13,8 +13,8 @@ class Migration(migrations.Migration):
 
     operations = [
         migrate_sql.operations.CreateSQL(
-            name=b'top_books',
-            sql=[(b'\n            CREATE OR REPLACE FUNCTION top_books()\n                RETURNS SETOF test_app_book AS $$\n            BEGIN\n                RETURN QUERY\n                    SELECT * FROM test_app_book ab\n                    WHERE ab.rating > %s\n                    ORDER BY ab.rating DESC;\n            END;\n            $$ LANGUAGE plpgsql;\n          ', [5])],
-            reverse_sql=b'DROP FUNCTION top_books()',
+            name='top_books',
+            sql=[('\n            CREATE OR REPLACE FUNCTION top_books()\n                RETURNS SETOF test_app_book AS $$\n            BEGIN\n                RETURN QUERY\n                    SELECT * FROM test_app_book ab\n                    WHERE ab.rating > %s\n                    ORDER BY ab.rating DESC;\n            END;\n            $$ LANGUAGE plpgsql;\n          ', [5])],
+            reverse_sql='DROP FUNCTION top_books()',
         ),
     ]
