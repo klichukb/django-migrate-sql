@@ -27,6 +27,6 @@ class Migration(migrations.Migration):
             name='narration',
             sql='CREATE TYPE narration AS (sale1 sale, book1 book, arg1 int); -- 1',
             reverse_sql='DROP TYPE narration',
-            dependencies=[(b'test_app', 'book'), (b'test_app2', 'sale')],
+            dependencies=[('test_app', 'book'), ('test_app2', 'sale')],
         ),
     ]

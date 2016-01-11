@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
+
 class SQLItem(object):
     """
     Represents any SQL entity (unit), for example function, type, index or trigger.

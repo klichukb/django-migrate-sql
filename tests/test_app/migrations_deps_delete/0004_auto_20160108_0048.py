@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
             name='author',
             sql='CREATE TYPE author AS (book1 book, arg1 int); -- 1',
             reverse_sql='DROP TYPE author',
-            dependencies=[(b'test_app', 'book')],
+            dependencies=[('test_app', 'book')],
         ),
         migrate_sql.operations.AlterSQL(
             name='narration',
@@ -37,6 +37,6 @@ class Migration(migrations.Migration):
             name='product',
             sql='CREATE TYPE product AS (book1 book, author1 author, edition1 edition, arg1 int); -- 1',
             reverse_sql='DROP TYPE product',
-            dependencies=[(b'test_app', 'edition'), (b'test_app', 'book'), (b'test_app', 'author')],
+            dependencies=[('test_app', 'edition'), ('test_app', 'book'), ('test_app', 'author')],
         ),
     ]

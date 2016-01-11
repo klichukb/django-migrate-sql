@@ -4,10 +4,15 @@ from __future__ import unicode_literals
 import tempfile
 import shutil
 import os
-from StringIO import StringIO
-from contextlib import contextmanager, nested
+
+from contextlib import contextmanager
 from importlib import import_module
 from psycopg2.extras import register_composite, CompositeCaster
+
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 
 from django.test import TestCase
 from django.db import connection
@@ -431,16 +436,16 @@ class SQLDependenciesTestCase(BaseMigrateSQLTestCase):
         """
         Checks migrations content and result after being run.
         """
-        with nested(self.temporary_migration_module(app_label='test_app', module=module),
-                    self.temporary_migration_module(app_label='test_app2', module=module2)):
-            call_command('makemigrations', stdout=self.out)
-            self.check_migrations_content(content)
+        with self.temporary_migration_module(app_label='test_app', module=module):
+            with self.temporary_migration_module(app_label='test_app2', module=module2):
+                call_command('makemigrations', stdout=self.out)
+                self.check_migrations_content(content)
 
-            for app_label, migration in migrations:
-                call_command('migrate', app_label, migration, stdout=self.out)
-                check_cases = self.RESULTS_EXPECTED[(app_label, migration)]
-                for check_case in check_cases:
-                    self.check_type(*check_case)
+                for app_label, migration in migrations:
+                    call_command('migrate', app_label, migration, stdout=self.out)
+                    check_cases = self.RESULTS_EXPECTED[(app_label, migration)]
+                    for check_case in check_cases:
+                        self.check_type(*check_case)
 
     def test_deps_create(self):
         """

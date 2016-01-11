@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
 from django.db.migrations.autodetector import MigrationAutodetector as DjangoMigrationAutodetector
 from django.db.migrations.operations import RunSQL
 

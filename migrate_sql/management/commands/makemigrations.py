@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
 """
 Replaces built-in Django command and forces it generate SQL item modification operations
 into regular Django migrations.
