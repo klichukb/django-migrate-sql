@@ -93,7 +93,7 @@ Operations to perform:
   Apply all migrations: app_name
 Running migrations:
   Rendering model states... DONE
-  Applying app_name.0004_xxxx... OK
+  Applying app_name.0002_xxxx... OK
 ```
 
 Check result in `./manage.py dbshell`:
