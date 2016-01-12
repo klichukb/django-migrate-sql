@@ -39,13 +39,18 @@ def get_version(package):
     init_py = open(os.path.join(package, '__init__.py')).read()
     return re.search("__version__ = ['\"]([^'\"]+)['\"]", init_py).group(1)
 
-VERSION = get_version('migrate_sql')
 
+with open('README.md') as readme_file:
+    readme = readme_file.read()
+
+
+VERSION = get_version('migrate_sql')
 
 setup(
     name='django-migrate-sql',
     version=VERSION,
     description='Migration support for raw SQL in Django',
+    long_description=readme,
     author='Bogdan Klichuk',
     author_email='klichukb@gmail.com',
     packages=[
