@@ -157,7 +157,7 @@ class MigrationAutodetector(DjangoMigrationAutodetector):
                     reverse_sql = self.from_sql_graph.nodes[key].sql
             else:
                 operation_cls = CreateSQL
-                kwargs = {'dependencies': sql_deps}
+                kwargs = {'dependencies': list(sql_deps)}
 
             operation = operation_cls(
                 sql_name, new_item.sql, reverse_sql=reverse_sql, **kwargs)
