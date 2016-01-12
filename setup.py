@@ -45,7 +45,7 @@ VERSION = get_version('migrate_sql')
 setup(
     name='django-migrate-sql',
     version=VERSION,
-    description='Simple migration layer for raw SQL in Django',
+    description='Migration support for raw SQL in Django',
     author='Bogdan Klichuk',
     author_email='klichukb@gmail.com',
     packages=[
