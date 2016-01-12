@@ -52,11 +52,11 @@ What it does not
 Installation
 ------------
 
-Download source code
+Install from PyPi:
 
 ::
 
-    $ pip install -e git+http://github.com/klichukb/django-migrate-sql.git#egg=django-migrate-sql
+    $ pip install django-migrate-sql
 
 Add ``migrate_sql`` to ``INSTALLED_APPS``:
 

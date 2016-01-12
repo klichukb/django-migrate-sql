@@ -5,7 +5,7 @@ import re
 import os
 import sys
 
-from setuptools import setup
+from setuptools import setup, find_packages
 from setuptools.command.test import test as TestCommand
 
 
@@ -53,9 +53,7 @@ setup(
     long_description=readme,
     author='Bogdan Klichuk',
     author_email='klichukb@gmail.com',
-    packages=[
-        'migrate_sql',
-    ],
+    packages=find_packages(),
     package_dir={'migrate_sql': 'migrate_sql'},
     license='BSD',
     zip_safe=False,
