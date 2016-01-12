@@ -213,5 +213,5 @@ HINT:  No function matches the given name and argument types. You might need to 
 
 For more examples see `tests`.
 
-Feel free to (https://github.com/klichukb/django-migrate-sql/issues)[open new issues].
+Feel free to [open new issues](https://github.com/klichukb/django-migrate-sql/issues).
 
