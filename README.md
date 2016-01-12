@@ -33,7 +33,7 @@ Add `migrate_sql` to `INSTALLED_APPS`:
 ```python
 INSTALLED_APPS = [
     # ...
-    `migrate_sql`,
+    'migrate_sql',
 ]
 ```
 App defines a custom `makemigrations` command, that inherits from Django's core one, so in order `migrate_sql` app to kick in put it after any other apps that redefine `makemigrations` command too.
